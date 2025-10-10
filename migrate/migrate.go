@@ -223,13 +223,13 @@ func createRunner(ctx context.Context, dbURL string, cfg *Config) (*internal.Run
 		// Use embedded migrations - prefer custom EmbedFS if provided
 		embedFS := cfg.EmbedFS
 		subdir := cfg.EmbedSubdir
-		
+
 		// Fallback to default embedded migrations if custom FS is not provided
 		if dirs, err := embedFS.ReadDir("."); err != nil || len(dirs) == 0 {
 			embedFS = EmbeddedMigrations
 			subdir = "files"
 		}
-		
+
 		return internal.NewRunnerWithEmbed(ctx, dbURL, embedFS, subdir, runnerCfg)
 	}
 
@@ -252,10 +252,10 @@ func UpFromDatabaseConfig(ctx context.Context, dbConfig DatabaseConfigInterface)
 	if dbConfig.GetMigrationSource() == "" {
 		return ErrNoMigrationSource
 	}
-	
+
 	// Build options from database config
 	var opts []Option
-	
+
 	if dbConfig.GetMigrationSource() == "embed://" {
 		opts = append(opts, WithEmbed())
 	} else if len(dbConfig.GetMigrationSource()) > 7 && dbConfig.GetMigrationSource()[:7] == "file://" {
@@ -264,16 +264,16 @@ func UpFromDatabaseConfig(ctx context.Context, dbConfig DatabaseConfigInterface)
 	} else {
 		return fmt.Errorf("invalid migration_source format: %s", dbConfig.GetMigrationSource())
 	}
-	
+
 	opts = append(opts,
 		WithTable(dbConfig.GetMigrationTable()),
 		WithLockTimeout(dbConfig.GetMigrationLockTimeout()),
 	)
-	
+
 	if dbConfig.GetMigrationVerbose() {
 		opts = append(opts, WithVerbose())
 	}
-	
+
 	return Up(ctx, dbConfig.GetDSN(), opts...)
 }
 

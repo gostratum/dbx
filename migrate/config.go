@@ -3,6 +3,7 @@ package migrate
 import (
 	"embed"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -99,68 +100,43 @@ func DefaultConfig() *Config {
 	}
 }
 
-// NewConfig creates a new migration config from Viper
-// Supports both legacy "dbx.migrate" prefix and new unified "databases.primary" structure
-// for backward compatibility
+// NewConfig creates a new migration config from Viper using unified databases configuration
+// Reads from databases.primary.* configuration keys and DB_DATABASES_PRIMARY_* environment variables
 func NewConfig(v *viper.Viper) (*Config, error) {
 	cfg := DefaultConfig()
 
-	// Try new unified configuration first (databases.primary.*)
-	if v.IsSet("databases.primary.migration_source") || v.IsSet("databases.primary.auto_migrate") {
-		// Set defaults for unified config
-		v.SetDefault("databases.primary.auto_migrate", false)
-		v.SetDefault("databases.primary.migration_source", "")
-		v.SetDefault("databases.primary.migration_table", "schema_migrations")
-		v.SetDefault("databases.primary.migration_lock_timeout", "15s")
-		v.SetDefault("databases.primary.migration_verbose", false)
+	// Set defaults for unified config
+	v.SetDefault("databases.primary.auto_migrate", false)
+	v.SetDefault("databases.primary.migration_source", "")
+	v.SetDefault("databases.primary.migration_table", "schema_migrations")
+	v.SetDefault("databases.primary.migration_lock_timeout", "15s")
+	v.SetDefault("databases.primary.migration_verbose", false)
 
-		// Bind environment variables for unified config
-		v.BindEnv("databases.primary.auto_migrate", "DB_DATABASES_PRIMARY_AUTO_MIGRATE")
-		v.BindEnv("databases.primary.migration_source", "DB_DATABASES_PRIMARY_MIGRATION_SOURCE")
-		v.BindEnv("databases.primary.migration_table", "DB_DATABASES_PRIMARY_MIGRATION_TABLE")
-		v.BindEnv("databases.primary.migration_lock_timeout", "DB_DATABASES_PRIMARY_MIGRATION_LOCK_TIMEOUT")
-		v.BindEnv("databases.primary.migration_verbose", "DB_DATABASES_PRIMARY_MIGRATION_VERBOSE")
+	// Bind environment variables for unified config
+	v.BindEnv("databases.primary.auto_migrate", "DB_DATABASES_PRIMARY_AUTO_MIGRATE")
+	v.BindEnv("databases.primary.migration_source", "DB_DATABASES_PRIMARY_MIGRATION_SOURCE")
+	v.BindEnv("databases.primary.migration_table", "DB_DATABASES_PRIMARY_MIGRATION_TABLE")
+	v.BindEnv("databases.primary.migration_lock_timeout", "DB_DATABASES_PRIMARY_MIGRATION_LOCK_TIMEOUT")
+	v.BindEnv("databases.primary.migration_verbose", "DB_DATABASES_PRIMARY_MIGRATION_VERBOSE")
 
-		// Map unified config fields to migration config
-		cfg.AutoMigrate = v.GetBool("databases.primary.auto_migrate")
-		cfg.Table = v.GetString("databases.primary.migration_table")
-		cfg.LockTimeout = v.GetDuration("databases.primary.migration_lock_timeout")
-		cfg.Verbose = v.GetBool("databases.primary.migration_verbose")
+	// Map unified config fields to migration config
+	cfg.AutoMigrate = v.GetBool("databases.primary.auto_migrate")
+	cfg.Table = v.GetString("databases.primary.migration_table")
+	cfg.LockTimeout = v.GetDuration("databases.primary.migration_lock_timeout")
+	cfg.Verbose = v.GetBool("databases.primary.migration_verbose")
 
-		// Handle migration source
-		source := v.GetString("databases.primary.migration_source")
-		switch {
-		case source == "embed://":
-			cfg.UseEmbed = true
-			cfg.Dir = ""
-		case source != "":
-			cfg.UseEmbed = false
-			cfg.Dir = source[7:] // Remove "file://" prefix if present
-			if cfg.Dir == source {
-				cfg.Dir = source // No prefix, use as-is
-			}
-		}
-	} else {
-		// Fall back to legacy dbx.migrate configuration
-		v.SetDefault("dbx.migrate.auto_migrate", false)
-		v.SetDefault("dbx.migrate.dir", "")
-		v.SetDefault("dbx.migrate.use_embed", false)
-		v.SetDefault("dbx.migrate.table", "schema_migrations")
-		v.SetDefault("dbx.migrate.lock_timeout", "15s")
-		v.SetDefault("dbx.migrate.verbose", false)
-
-		// Bind environment variables for legacy config
-		v.BindEnv("dbx.migrate.auto_migrate", "DBX_MIGRATE_AUTOMIGRATE", "DBX_MIGRATE_AUTO_MIGRATE")
-		v.BindEnv("dbx.migrate.dir", "DBX_MIGRATE_DIR")
-		v.BindEnv("dbx.migrate.use_embed", "DBX_MIGRATE_USE_EMBED", "DBX_MIGRATE_USEEMBED")
-		v.BindEnv("dbx.migrate.table", "DBX_MIGRATE_TABLE")
-		v.BindEnv("dbx.migrate.lock_timeout", "DBX_MIGRATE_LOCK_TIMEOUT", "DBX_MIGRATE_LOCKTIMEOUT")
-		v.BindEnv("dbx.migrate.verbose", "DBX_MIGRATE_VERBOSE")
-
-		// Unmarshal legacy configuration
-		if err := v.UnmarshalKey("dbx.migrate", cfg); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal migrate config: %w", err)
-		}
+	// Handle migration source
+	source := v.GetString("databases.primary.migration_source")
+	switch {
+	case source == "embed://":
+		cfg.UseEmbed = true
+		cfg.Dir = ""
+	case strings.HasPrefix(source, "file://"):
+		cfg.UseEmbed = false
+		cfg.Dir = source[7:] // Remove "file://" prefix
+	case source != "":
+		cfg.UseEmbed = false
+		cfg.Dir = source // Use as-is (no prefix)
 	}
 
 	// Validate configuration

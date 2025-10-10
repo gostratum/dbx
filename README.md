@@ -630,113 +630,110 @@ app := core.New(
 )
 ```
 
-### 📂 Where Do Migration Files Go?
+### � New Unified Configuration (Recommended)
 
-**IMPORTANT**: Migration SQL files must be in **YOUR application's directory structure**, not in the `dbx` module.
+**Migration settings are now integrated directly into database configuration!** This makes it much more intuitive - migration settings live alongside database settings.
 
-#### For Embedded Migrations (Production)
+#### YAML Configuration (Production)
 
-Your application structure should look like:
-
+```yaml
+db:
+  default: primary
+  databases:
+    primary:
+      # Database Connection
+      driver: postgres
+      dsn: postgres://user:pass@localhost:5432/mydb?sslmode=disable
+      max_open_conns: 25
+      log_level: info
+      
+      # Migration Settings (integrated!)
+      migration_source: "embed://"              # Use embedded migrations
+      auto_migrate: false                       # Safe default - NEVER enable in production!
+      migration_table: "schema_migrations"      # Table for tracking migrations
+      migration_lock_timeout: "15s"            # Lock timeout
+      migration_verbose: false                  # Quiet logging
 ```
-your-app/
-├── cmd/
-│   └── server/
-│       └── main.go          ← Your app entry point
-├── migrations/              ← YOUR migration files HERE
-│   ├── 000001_init.up.sql
-│   ├── 000001_init.down.sql
-│   ├── 000002_add_orders.up.sql
-│   └── 000002_add_orders.down.sql
-├── go.mod
-└── go.sum
-```
 
-**In your `main.go`:**
+#### Your Application Code
 
 ```go
 package main
 
 import (
     "embed"
-    "github.com/gostratum/core"
+    "github.com/gostratum/core" 
     "github.com/gostratum/dbx"
     "go.uber.org/fx"
 )
 
-// Embed YOUR app's migration files into the binary
-//go:embed ../../migrations/*.sql
+//go:embed migrations/*.sql
 var migrationsFS embed.FS
 
 func main() {
     app := core.New(
-        // Provide the embedded FS to Fx
-        fx.Provide(func() embed.FS {
-            return migrationsFS
-        }),
+        // Provide embedded migrations
+        fx.Provide(func() embed.FS { return migrationsFS }),
         
-        // Tell dbx to use embedded migrations
-        dbx.Module(
-            dbx.WithGolangMigrateEmbed(),
-        ),
+        // DBX module - no migration options needed!
+        // Everything configured via unified database config
+        dbx.Module(),
         
         fx.Invoke(func(db *gorm.DB) {
-            // Your database is ready!
+            // Database ready with migrations applied!
         }),
     )
     app.Run()
 }
 ```
 
-#### For Filesystem Migrations (Development)
-
-```go
-// Same directory structure, but read from disk instead
-app := core.New(
-    dbx.Module(
-        dbx.WithGolangMigrateDir("./migrations"),  // Path to YOUR migrations
-    ),
-)
-```
-
-> **💡 See [MIGRATION_FILES_GUIDE.md](./MIGRATION_FILES_GUIDE.md) for a complete explanation of how migration files are located and loaded.**
-
-### Configuration
-
-#### Via YAML Config
-
-```yaml
-dbx:
-  migrate:
-    auto_migrate: true  # WARNING: Only enable in dev/CI, never in production!
-    use_embed: true     # Use embedded migrations
-    dir: ""             # Or specify filesystem directory
-    table: "schema_migrations"  # Custom migrations table name
-    lock_timeout: "15s" # Lock timeout for concurrent migrations
-    verbose: false      # Enable verbose logging
-```
-
-#### Via Environment Variables
+#### Environment Variables
 
 ```bash
-# Migration configuration
-DBX_MIGRATE_AUTOMIGRATE=false  # NEVER set to true in production!
-DBX_MIGRATE_USE_EMBED=true
-DBX_MIGRATE_DIR=/app/migrations
-DBX_MIGRATE_TABLE=schema_migrations
-DBX_MIGRATE_LOCK_TIMEOUT=15s
-DBX_MIGRATE_VERBOSE=true
+# Database connection
+DB_DATABASES_PRIMARY_DRIVER=postgres
+DB_DATABASES_PRIMARY_DSN=postgres://user:pass@localhost:5432/mydb
+
+# Migration settings (unified under database config)
+DB_DATABASES_PRIMARY_MIGRATION_SOURCE=embed://
+DB_DATABASES_PRIMARY_AUTO_MIGRATE=false
+DB_DATABASES_PRIMARY_MIGRATION_VERBOSE=true
 ```
 
-#### Via Module Options
+#### Migration Source Options
 
-```go
-dbx.Module(
-    dbx.WithGolangMigrate(),           // Enable golang-migrate
-    dbx.WithGolangMigrateEmbed(),      // Use embedded migrations
-    dbx.WithGolangMigrateDir("./migrations"), // Or use filesystem
-)
+| Format | Description | Use Case |
+|--------|-------------|----------|
+| `"embed://"` | Use embedded files (`//go:embed`) | **Production** - files in binary |
+| `"file://./migrations"` | Read from filesystem | **Development** - easy iteration |
+| `""` (empty) | No migrations | **Cache/read-only databases** |
+
+### 📂 Where Do Migration Files Go?
+
+Migration SQL files must be in **YOUR application's directory**:
+
 ```
+your-app/
+├── main.go              ← Contains: //go:embed migrations/*.sql
+├── migrations/          ← YOUR SQL FILES HERE
+│   ├── 000001_init.up.sql
+│   ├── 000001_init.down.sql
+│   └── 000002_add_orders.up.sql
+└── go.mod
+```
+
+
+
+
+
+```bash
+# Migration configuration using unified database environment variables
+DB_DATABASES_PRIMARY_AUTO_MIGRATE=false
+DB_DATABASES_PRIMARY_MIGRATION_SOURCE=embed://
+DB_DATABASES_PRIMARY_MIGRATION_TABLE=schema_migrations
+DB_DATABASES_PRIMARY_MIGRATION_LOCK_TIMEOUT=15s
+DB_DATABASES_PRIMARY_MIGRATION_VERBOSE=true
+
 
 ### Creating Migrations
 
@@ -772,68 +769,6 @@ make migrate-create NAME=add_orders_table
 # This creates:
 # - migrate/files/000002_add_orders_table.up.sql
 # - migrate/files/000002_add_orders_table.down.sql
-```
-
-### CLI Tool Usage
-
-The `db-migrate` CLI tool provides manual control over migrations:
-
-#### Build the CLI
-
-```bash
-make build
-# Binary created at: bin/db-migrate
-```
-
-#### Common Commands
-
-```bash
-# Apply all pending migrations
-./bin/db-migrate up --embed
-./bin/db-migrate up --dir ./migrate/files
-
-# Show current migration status
-./bin/db-migrate status --embed
-
-# Revert the last migration
-./bin/db-migrate down --embed
-
-# Revert all migrations
-./bin/db-migrate down --all --embed
-
-# Migrate to a specific version
-./bin/db-migrate to --version 2 --embed
-
-# Apply relative steps (positive for up, negative for down)
-./bin/db-migrate steps --n 2 --embed      # Apply next 2 migrations
-./bin/db-migrate steps --n -1 --embed     # Revert 1 migration
-
-# Force set version (DANGEROUS - use only for recovery)
-./bin/db-migrate force --version 1 --embed
-
-# Drop all database objects (DESTRUCTIVE!)
-./bin/db-migrate drop --yes-i-know --embed
-```
-
-#### CLI Flags
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--db-url` | Database connection URL | From env/config |
-| `--dir` | Path to migrations directory | - |
-| `--embed` | Use embedded migrations | false |
-| `--table` | Migrations table name | `schema_migrations` |
-| `--verbose` | Enable verbose logging | false |
-
-#### Environment Variables for CLI
-
-```bash
-# Database connection (priority order)
-export DBX_URL="postgres://user:pass@localhost:5432/dbname?sslmode=disable"
-# or
-export DB_URL="postgres://..."
-# or
-export DATABASE_URL="postgres://..."
 ```
 
 ### Library API
@@ -908,15 +843,21 @@ func main() {
    - Have rollback plans ready
 
 3. **Run migrations before deployment**
-   ```bash
-   # In CI/CD pipeline, before deploying new code
-   ./bin/db-migrate up --embed
+   ```go
+   // In CI/CD pipeline, before deploying new code
+   if err := migrate.Up(ctx, dbURL, migrate.WithEmbed()); err != nil {
+       // Handle migration errors
+   }
    ```
 
 4. **Monitor migration status**
-   ```bash
-   # Check migration status
-   ./bin/db-migrate status --embed
+   ```go
+   // Check migration status
+   status, err := migrate.GetStatus(ctx, dbURL, migrate.WithEmbed())
+   if err != nil {
+       // Handle error
+   }
+   log.Printf("Version: %d, Dirty: %v", status.Current, status.Dirty)
    ```
 
 5. **Handle migration failures gracefully**
@@ -946,15 +887,11 @@ jobs:
         with:
           go-version: '1.21'
       
-      - name: Build migration tool
-        run: make build
-      
       - name: Run migrations
         env:
           DBX_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          ./bin/db-migrate status --embed
-          ./bin/db-migrate up --embed
+          go run main.go -migrate # or use your application's migration command
 ```
 
 **Kubernetes Init Container:**
@@ -968,11 +905,11 @@ spec:
   template:
     spec:
       initContainers:
-      - name: db-migrate
+      - name: migration
         image: myapp:latest
-        command: ["/app/db-migrate", "up", "--embed"]
+        command: ["/app/myapp", "-migrate"]  # Use your app's migration command
         env:
-        - name: DBX_URL
+        - name: DB_DATABASES_PRIMARY_URL
           valueFrom:
             secretKeyRef:
               name: db-credentials
@@ -998,9 +935,6 @@ dbx/
 │   └── internal/
 │       ├── runner.go        # Migration runner
 │       └── status.go        # Status tracking
-└── cmd/
-    └── db-migrate/
-        └── main.go          # CLI tool
 ```
 
 ### Troubleshooting
@@ -1009,16 +943,23 @@ dbx/
 
 If a migration fails partway through, the state becomes "dirty":
 
-```bash
-# Check status
-./bin/db-migrate status --embed
-# Output: Current Version: 2, Dirty: true
+```go
+// Check status
+status, err := migrate.GetStatus(ctx, dbURL, migrate.WithEmbed())
+if err != nil {
+    log.Fatal(err)
+}
+log.Printf("Current Version: %d, Dirty: %v", status.Current, status.Dirty)
 
-# Fix the issue in your migration file, then force the version
-./bin/db-migrate force --version 1 --embed
+// Fix the issue in your migration file, then force the version
+if err := migrate.Force(ctx, dbURL, 1, migrate.WithEmbed()); err != nil {
+    log.Fatal(err)
+}
 
-# Re-run the migration
-./bin/db-migrate up --embed
+// Re-run the migration
+if err := migrate.Up(ctx, dbURL, migrate.WithEmbed()); err != nil {
+    log.Fatal(err)
+}
 ```
 
 #### Lock Timeout

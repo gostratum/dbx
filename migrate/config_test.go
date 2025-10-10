@@ -176,40 +176,6 @@ func TestNewConfigFromViper(t *testing.T) {
 		assert.Equal(t, 15*time.Second, cfg.LockTimeout)
 	})
 
-	t.Run("Load from viper with custom values", func(t *testing.T) {
-		v := viper.New()
-		v.Set("dbx.migrate.auto_migrate", true)
-		v.Set("dbx.migrate.dir", "/custom/migrations")
-		v.Set("dbx.migrate.table", "custom_table")
-		v.Set("dbx.migrate.lock_timeout", "30s")
-		v.Set("dbx.migrate.verbose", true)
-
-		cfg, err := NewConfig(v)
-
-		require.NoError(t, err)
-		assert.True(t, cfg.AutoMigrate)
-		assert.Equal(t, "/custom/migrations", cfg.Dir)
-		assert.Equal(t, "custom_table", cfg.Table)
-		assert.Equal(t, 30*time.Second, cfg.LockTimeout)
-		assert.True(t, cfg.Verbose)
-	})
-
-	t.Run("Load from environment variables (legacy)", func(t *testing.T) {
-		v := viper.New()
-
-		// Simulate legacy environment variables
-		v.Set("dbx.migrate.auto_migrate", false)
-		v.Set("dbx.migrate.use_embed", true)
-		v.Set("dbx.migrate.table", "env_migrations")
-
-		cfg, err := NewConfig(v)
-
-		require.NoError(t, err)
-		assert.False(t, cfg.AutoMigrate)
-		assert.True(t, cfg.UseEmbed)
-		assert.Equal(t, "env_migrations", cfg.Table)
-	})
-
 	t.Run("Load from unified configuration (databases.primary)", func(t *testing.T) {
 		v := viper.New()
 		v.Set("databases.primary.auto_migrate", true)
@@ -242,6 +208,55 @@ func TestNewConfigFromViper(t *testing.T) {
 		assert.True(t, cfg.UseEmbed)
 		assert.Empty(t, cfg.Dir)
 		assert.Equal(t, "embedded_migrations", cfg.Table)
+	})
+
+	t.Run("Load with file source without protocol prefix", func(t *testing.T) {
+		v := viper.New()
+		v.Set("databases.primary.migration_source", "./migrations")
+		v.Set("databases.primary.migration_table", "no_prefix_migrations")
+
+		cfg, err := NewConfig(v)
+
+		require.NoError(t, err)
+		assert.False(t, cfg.UseEmbed)
+		assert.Equal(t, "./migrations", cfg.Dir)
+		assert.Equal(t, "no_prefix_migrations", cfg.Table)
+	})
+
+	t.Run("Load with empty migration source", func(t *testing.T) {
+		v := viper.New()
+		v.Set("databases.primary.auto_migrate", false)
+		v.Set("databases.primary.migration_table", "no_source_table")
+
+		cfg, err := NewConfig(v)
+
+		require.NoError(t, err)
+		assert.False(t, cfg.AutoMigrate)
+		assert.False(t, cfg.UseEmbed)
+		assert.Empty(t, cfg.Dir)
+		assert.Equal(t, "no_source_table", cfg.Table)
+	})
+
+	t.Run("Error on AutoMigrate without source", func(t *testing.T) {
+		v := viper.New()
+		v.Set("databases.primary.auto_migrate", true)
+		// No migration source provided
+
+		_, err := NewConfig(v)
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrNoMigrationSource)
+	})
+
+	t.Run("Load with custom lock timeout", func(t *testing.T) {
+		v := viper.New()
+		v.Set("databases.primary.migration_source", "embed://")
+		v.Set("databases.primary.migration_lock_timeout", "2m30s")
+
+		cfg, err := NewConfig(v)
+
+		require.NoError(t, err)
+		assert.Equal(t, 2*time.Minute+30*time.Second, cfg.LockTimeout)
 	})
 }
 

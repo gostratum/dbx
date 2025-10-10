@@ -29,14 +29,25 @@ func TestDefaultConfig(t *testing.T) {
 func TestDefaultDatabaseConfig(t *testing.T) {
 	cfg := DefaultDatabaseConfig()
 
-	assert.NotNil(t, cfg)
+	// Database connection settings
 	assert.Equal(t, "postgres", cfg.Driver)
-	assert.True(t, strings.Contains(cfg.DSN, "postgres://"))
+	assert.Equal(t, "postgres://localhost/dbname?sslmode=disable", cfg.DSN)
 	assert.Equal(t, 25, cfg.MaxOpenConns)
 	assert.Equal(t, 5, cfg.MaxIdleConns)
+	assert.Equal(t, 5*time.Minute, cfg.ConnMaxLifetime)
+	assert.Equal(t, 5*time.Minute, cfg.ConnMaxIdleTime)
 	assert.Equal(t, "warn", cfg.LogLevel)
+	assert.Equal(t, 200*time.Millisecond, cfg.SlowThreshold)
 	assert.False(t, cfg.SkipDefaultTx)
 	assert.True(t, cfg.PrepareStmt)
+	assert.NotNil(t, cfg.Params)
+
+	// Migration settings (safe defaults)
+	assert.Empty(t, cfg.MigrationSource, "MigrationSource should be empty by default for safety")
+	assert.False(t, cfg.AutoMigrate, "AutoMigrate should be false by default for production safety")
+	assert.Equal(t, "schema_migrations", cfg.MigrationTable)
+	assert.Equal(t, 15*time.Second, cfg.MigrationLockTimeout)
+	assert.False(t, cfg.MigrationVerbose)
 }
 
 func TestLoadConfigFromYAML(t *testing.T) {
@@ -203,57 +214,77 @@ func TestConfigValidation(t *testing.T) {
 }
 
 func TestDatabaseConfigValidation(t *testing.T) {
-	tests := []struct {
-		name        string
-		config      *DatabaseConfig
-		expectError bool
-		errorMsg    string
-	}{
-		{
-			name: "valid config",
-			config: &DatabaseConfig{
-				Driver:          "postgres",
-				DSN:             "postgres://localhost/test",
-				MaxOpenConns:    25,
-				MaxIdleConns:    5,
-				ConnMaxLifetime: 5 * time.Minute,
-			},
-			expectError: false,
-		},
-		{
-			name: "negative max open conns",
-			config: &DatabaseConfig{
-				Driver:       "postgres",
-				DSN:          "postgres://localhost/test",
-				MaxOpenConns: -1,
-			},
-			expectError: true,
-			errorMsg:    "max_open_conns must be >= 0",
-		},
-		{
-			name: "negative max idle conns",
-			config: &DatabaseConfig{
-				Driver:       "postgres",
-				DSN:          "postgres://localhost/test",
-				MaxIdleConns: -1,
-			},
-			expectError: true,
-			errorMsg:    "max_idle_conns must be >= 0",
-		},
-	}
+	t.Run("valid config", func(t *testing.T) {
+		cfg := DefaultDatabaseConfig()
+		err := cfg.Validate()
+		assert.NoError(t, err)
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.config.Validate()
+	t.Run("negative max_open_conns", func(t *testing.T) {
+		cfg := DefaultDatabaseConfig()
+		cfg.MaxOpenConns = -1
+		err := cfg.Validate()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "max_open_conns")
+	})
 
-			if tt.expectError {
-				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errorMsg)
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
+	t.Run("negative max_idle_conns", func(t *testing.T) {
+		cfg := DefaultDatabaseConfig()
+		cfg.MaxIdleConns = -1
+		err := cfg.Validate()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "max_idle_conns")
+	})
+
+	t.Run("migration validation - AutoMigrate without source", func(t *testing.T) {
+		cfg := DefaultDatabaseConfig()
+		cfg.AutoMigrate = true
+		cfg.MigrationSource = ""
+		err := cfg.Validate()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "auto_migrate is enabled but migration_source is empty")
+	})
+
+	t.Run("migration validation - valid embed source", func(t *testing.T) {
+		cfg := DefaultDatabaseConfig()
+		cfg.AutoMigrate = true
+		cfg.MigrationSource = "embed://"
+		err := cfg.Validate()
+		assert.NoError(t, err)
+	})
+
+	t.Run("migration validation - valid file source", func(t *testing.T) {
+		cfg := DefaultDatabaseConfig()
+		cfg.AutoMigrate = true
+		cfg.MigrationSource = "file://./migrations"
+		err := cfg.Validate()
+		assert.NoError(t, err)
+	})
+
+	t.Run("migration validation - invalid source format", func(t *testing.T) {
+		cfg := DefaultDatabaseConfig()
+		cfg.MigrationSource = "invalid://source"
+		err := cfg.Validate()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "migration_source must be")
+	})
+
+	t.Run("migration validation - empty table when source specified", func(t *testing.T) {
+		cfg := DefaultDatabaseConfig()
+		cfg.MigrationSource = "embed://"
+		cfg.MigrationTable = ""
+		err := cfg.Validate()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "migration_table cannot be empty")
+	})
+
+	t.Run("migration validation - negative lock timeout", func(t *testing.T) {
+		cfg := DefaultDatabaseConfig()
+		cfg.MigrationLockTimeout = -1 * time.Second
+		err := cfg.Validate()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "migration_lock_timeout must be >= 0")
+	})
 }
 
 func TestGetDefaultDatabase(t *testing.T) {
@@ -318,4 +349,21 @@ func TestGetDefaultDatabase(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDatabaseConfigMigrationInterface(t *testing.T) {
+	cfg := &DatabaseConfig{
+		DSN:                  "postgres://localhost/test",
+		MigrationSource:      "file://./migrations",
+		MigrationTable:       "custom_migrations",
+		MigrationLockTimeout: 30 * time.Second,
+		MigrationVerbose:     true,
+	}
+
+	// Test interface methods
+	assert.Equal(t, "postgres://localhost/test", cfg.GetDSN())
+	assert.Equal(t, "file://./migrations", cfg.GetMigrationSource())
+	assert.Equal(t, "custom_migrations", cfg.GetMigrationTable())
+	assert.Equal(t, 30*time.Second, cfg.GetMigrationLockTimeout())
+	assert.True(t, cfg.GetMigrationVerbose())
 }

@@ -15,6 +15,7 @@ type Config struct {
 
 // DatabaseConfig represents configuration for a single database connection
 type DatabaseConfig struct {
+	// Database Connection Settings
 	Driver          string            `mapstructure:"driver" yaml:"driver"`
 	DSN             string            `mapstructure:"dsn" yaml:"dsn"`
 	MaxOpenConns    int               `mapstructure:"max_open_conns" yaml:"max_open_conns"`
@@ -26,6 +27,29 @@ type DatabaseConfig struct {
 	SkipDefaultTx   bool              `mapstructure:"skip_default_tx" yaml:"skip_default_tx"`
 	PrepareStmt     bool              `mapstructure:"prepare_stmt" yaml:"prepare_stmt"`
 	Params          map[string]string `mapstructure:"params" yaml:"params"`
+
+	// Migration Settings
+	// MigrationSource defines where migration files are located
+	// Formats:
+	//   - "file://./migrations" - Read from filesystem directory
+	//   - "embed://" - Use embedded files (requires //go:embed in your app)
+	//   - "" (empty) - No migrations (migrations disabled)
+	MigrationSource string `mapstructure:"migration_source" yaml:"migration_source"`
+
+	// AutoMigrate enables automatic migration on startup (default: false)
+	// WARNING: Only use in development/CI environments, NEVER in production
+	AutoMigrate bool `mapstructure:"auto_migrate" yaml:"auto_migrate"`
+
+	// MigrationTable specifies the name of the schema migrations table
+	// Default: "schema_migrations"
+	MigrationTable string `mapstructure:"migration_table" yaml:"migration_table"`
+
+	// MigrationLockTimeout specifies how long to wait for the migration lock
+	// Default: 15 seconds
+	MigrationLockTimeout time.Duration `mapstructure:"migration_lock_timeout" yaml:"migration_lock_timeout"`
+
+	// MigrationVerbose enables verbose logging for migrations
+	MigrationVerbose bool `mapstructure:"migration_verbose" yaml:"migration_verbose"`
 }
 
 // DefaultConfig returns the default database configuration
@@ -41,6 +65,7 @@ func DefaultConfig() *Config {
 // DefaultDatabaseConfig returns the default configuration for a database connection
 func DefaultDatabaseConfig() *DatabaseConfig {
 	return &DatabaseConfig{
+		// Database Connection Settings
 		Driver:          "postgres",
 		DSN:             "postgres://localhost/dbname?sslmode=disable",
 		MaxOpenConns:    25,
@@ -52,6 +77,13 @@ func DefaultDatabaseConfig() *DatabaseConfig {
 		SkipDefaultTx:   false,
 		PrepareStmt:     true,
 		Params:          make(map[string]string),
+
+		// Migration Settings (Safe Defaults)
+		MigrationSource:      "",                  // Disabled by default for safety
+		AutoMigrate:          false,               // NEVER enable by default (production safety)
+		MigrationTable:       "schema_migrations", // Standard table name
+		MigrationLockTimeout: 15 * time.Second,    // Reasonable lock timeout
+		MigrationVerbose:     false,               // Quiet by default
 	}
 }
 
@@ -123,7 +155,59 @@ func (dc *DatabaseConfig) Validate() error {
 		return fmt.Errorf("conn_max_idle_time must be >= 0")
 	}
 
+	// Validate migration settings
+	if dc.AutoMigrate && dc.MigrationSource == "" {
+		return fmt.Errorf("auto_migrate is enabled but migration_source is empty - specify 'file://./migrations' or 'embed://'")
+	}
+
+	if dc.MigrationSource != "" {
+		if dc.MigrationSource != "embed://" && !isValidFileURL(dc.MigrationSource) {
+			return fmt.Errorf("migration_source must be 'embed://' or 'file://path' format, got: %s", dc.MigrationSource)
+		}
+	}
+
+	if dc.MigrationTable == "" && dc.MigrationSource != "" {
+		return fmt.Errorf("migration_table cannot be empty when migration_source is specified")
+	}
+
+	if dc.MigrationLockTimeout < 0 {
+		return fmt.Errorf("migration_lock_timeout must be >= 0")
+	}
+
 	return nil
+}
+
+// isValidFileURL checks if a string is a valid file:// URL
+func isValidFileURL(s string) bool {
+	return len(s) > 7 && s[:7] == "file://"
+}
+
+// Migration interface methods for DatabaseConfig
+// These allow the migrate package to use DatabaseConfig without circular imports
+
+// GetDSN returns the database DSN
+func (dc *DatabaseConfig) GetDSN() string {
+	return dc.DSN
+}
+
+// GetMigrationSource returns the migration source
+func (dc *DatabaseConfig) GetMigrationSource() string {
+	return dc.MigrationSource
+}
+
+// GetMigrationTable returns the migration table name
+func (dc *DatabaseConfig) GetMigrationTable() string {
+	return dc.MigrationTable
+}
+
+// GetMigrationLockTimeout returns the migration lock timeout
+func (dc *DatabaseConfig) GetMigrationLockTimeout() time.Duration {
+	return dc.MigrationLockTimeout
+}
+
+// GetMigrationVerbose returns whether migration verbose logging is enabled
+func (dc *DatabaseConfig) GetMigrationVerbose() bool {
+	return dc.MigrationVerbose
 }
 
 // GetDefaultDatabase returns the default database configuration
@@ -158,4 +242,11 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("db.databases.primary.slow_threshold", "200ms")
 	v.SetDefault("db.databases.primary.skip_default_tx", false)
 	v.SetDefault("db.databases.primary.prepare_stmt", true)
+
+	// Set default migration configuration (safe defaults)
+	v.SetDefault("db.databases.primary.migration_source", "") // Disabled by default
+	v.SetDefault("db.databases.primary.auto_migrate", false)  // NEVER enable by default
+	v.SetDefault("db.databases.primary.migration_table", "schema_migrations")
+	v.SetDefault("db.databases.primary.migration_lock_timeout", "15s")
+	v.SetDefault("db.databases.primary.migration_verbose", false)
 }
