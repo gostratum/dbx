@@ -117,7 +117,7 @@ func (hc *HealthChecker) createLivenessCheck(db *gorm.DB) HealthCheckFunc {
 		// Check connection pool stats
 		stats := sqlDB.Stats()
 		if stats.OpenConnections > stats.MaxOpenConnections && stats.MaxOpenConnections > 0 {
-			return fmt.Errorf("connection pool exhausted: %d/%d connections in use", 
+			return fmt.Errorf("connection pool exhausted: %d/%d connections in use",
 				stats.OpenConnections, stats.MaxOpenConnections)
 		}
 
@@ -138,13 +138,13 @@ func (hc *HealthChecker) createLivenessCheck(db *gorm.DB) HealthCheckFunc {
 // GetConnectionStats returns connection statistics for all databases
 func (hc *HealthChecker) GetConnectionStats() (map[string]ConnectionStats, error) {
 	stats := make(map[string]ConnectionStats)
-	
+
 	for name, db := range hc.connections {
 		sqlDB, err := db.DB()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get underlying DB for %s: %w", name, err)
 		}
-		
+
 		dbStats := sqlDB.Stats()
 		stats[name] = ConnectionStats{
 			MaxOpenConnections: dbStats.MaxOpenConnections,
@@ -157,7 +157,7 @@ func (hc *HealthChecker) GetConnectionStats() (map[string]ConnectionStats, error
 			MaxLifetimeClosed:  dbStats.MaxLifetimeClosed,
 		}
 	}
-	
+
 	return stats, nil
 }
 

@@ -12,11 +12,11 @@ import (
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
-	
+
 	assert.NotNil(t, cfg)
 	assert.Equal(t, "primary", cfg.Default)
 	assert.Len(t, cfg.Databases, 1)
-	
+
 	primaryDB := cfg.Databases["primary"]
 	assert.Equal(t, "postgres", primaryDB.Driver)
 	assert.Equal(t, 25, primaryDB.MaxOpenConns)
@@ -28,7 +28,7 @@ func TestDefaultConfig(t *testing.T) {
 
 func TestDefaultDatabaseConfig(t *testing.T) {
 	cfg := DefaultDatabaseConfig()
-	
+
 	assert.NotNil(t, cfg)
 	assert.Equal(t, "postgres", cfg.Driver)
 	assert.True(t, strings.Contains(cfg.DSN, "postgres://"))
@@ -42,7 +42,7 @@ func TestDefaultDatabaseConfig(t *testing.T) {
 func TestLoadConfigFromYAML(t *testing.T) {
 	v := viper.New()
 	v.SetConfigType("yaml")
-	
+
 	configYAML := `
 db:
   default: test
@@ -59,16 +59,16 @@ db:
       skip_default_tx: true
       prepare_stmt: false
 `
-	
+
 	err := v.ReadConfig(strings.NewReader(configYAML))
 	require.NoError(t, err)
-	
+
 	cfg, err := LoadConfig(v)
 	require.NoError(t, err)
-	
+
 	assert.Equal(t, "test", cfg.Default)
 	assert.Len(t, cfg.Databases, 1)
-	
+
 	testDB := cfg.Databases["test"]
 	assert.Equal(t, "postgres", testDB.Driver)
 	assert.Equal(t, "postgres://user:pass@localhost:5432/testdb?sslmode=disable", testDB.DSN)
@@ -85,7 +85,7 @@ db:
 func TestLoadConfigMultipleDatabases(t *testing.T) {
 	v := viper.New()
 	v.SetConfigType("yaml")
-	
+
 	configYAML := `
 db:
   default: primary
@@ -100,20 +100,20 @@ db:
       max_open_conns: 10
       log_level: silent
 `
-	
+
 	err := v.ReadConfig(strings.NewReader(configYAML))
 	require.NoError(t, err)
-	
+
 	cfg, err := LoadConfig(v)
 	require.NoError(t, err)
-	
+
 	assert.Equal(t, "primary", cfg.Default)
 	assert.Len(t, cfg.Databases, 2)
-	
+
 	primaryDB := cfg.Databases["primary"]
 	assert.Equal(t, "postgres://localhost:5432/app_db", primaryDB.DSN)
 	assert.Equal(t, 25, primaryDB.MaxOpenConns)
-	
+
 	analyticsDB := cfg.Databases["analytics"]
 	assert.Equal(t, "postgres://localhost:5432/analytics_db", analyticsDB.DSN)
 	assert.Equal(t, 10, analyticsDB.MaxOpenConns)
@@ -187,11 +187,11 @@ func TestConfigValidation(t *testing.T) {
 			errorMsg:    "dsn is required",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.config.Validate()
-			
+
 			if tt.expectError {
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errorMsg)
@@ -241,11 +241,11 @@ func TestDatabaseConfigValidation(t *testing.T) {
 			errorMsg:    "max_idle_conns must be >= 0",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.config.Validate()
-			
+
 			if tt.expectError {
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errorMsg)
@@ -268,7 +268,7 @@ func TestGetDefaultDatabase(t *testing.T) {
 			config: &Config{
 				Default: "primary",
 				Databases: map[string]*DatabaseConfig{
-					"primary": {DSN: "postgres://localhost/primary"},
+					"primary":   {DSN: "postgres://localhost/primary"},
 					"secondary": {DSN: "postgres://localhost/secondary"},
 				},
 			},
@@ -303,11 +303,11 @@ func TestGetDefaultDatabase(t *testing.T) {
 			expectError: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			db, err := tt.config.GetDefaultDatabase()
-			
+
 			if tt.expectError {
 				assert.Error(t, err)
 				assert.Nil(t, db)

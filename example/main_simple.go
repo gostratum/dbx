@@ -31,15 +31,13 @@ func main() {
 	logger, _ := zap.NewDevelopment()
 	defer logger.Sync()
 
-	// Setup configuration for PostgreSQL
+	// Setup configuration for SQLite (easier for examples)
 	v := viper.New()
 	v.SetConfigType("yaml")
 	v.Set("db.default", "primary")
-	v.Set("db.databases.primary.driver", "postgres") 
-	v.Set("db.databases.primary.dsn", "postgres://localhost/dbname?sslmode=disable")
+	v.Set("db.databases.primary.driver", "sqlite")
+	v.Set("db.databases.primary.dsn", "file::memory:?cache=shared")
 	v.Set("db.databases.primary.log_level", "info")
-	v.Set("db.databases.primary.max_open_conns", 25)
-	v.Set("db.databases.primary.max_idle_conns", 5)
 
 	// Load and validate config
 	config, err := dbx.LoadConfig(v)
@@ -49,14 +47,12 @@ func main() {
 
 	logger.Info("DBX Configuration loaded successfully")
 	logger.Info("Default database", zap.String("default", config.Default))
-	
+
 	for name, dbConfig := range config.Databases {
-		logger.Info("Database configured", 
+		logger.Info("Database configured",
 			zap.String("name", name),
 			zap.String("driver", dbConfig.Driver),
 			zap.String("log_level", dbConfig.LogLevel),
-			zap.Int("max_open_conns", dbConfig.MaxOpenConns),
-			zap.Int("max_idle_conns", dbConfig.MaxIdleConns),
 		)
 	}
 
@@ -73,29 +69,12 @@ func main() {
 		log.Fatalf("Failed to get default database: %v", err)
 	}
 
-	logger.Info("Default database config retrieved", 
+	logger.Info("Default database config retrieved",
 		zap.String("driver", defaultDB.Driver),
 		zap.Int("max_open_conns", defaultDB.MaxOpenConns),
-		zap.Duration("conn_max_lifetime", defaultDB.ConnMaxLifetime),
 	)
 
-	// Test transaction helpers (without actual DB connection)
-	logger.Info("Transaction helper functions available:",
-		zap.String("WithTx", "dbx.WithTx(db, func(tx *gorm.DB) error { ... })"),
-		zap.String("WithTxContext", "dbx.WithTxContext(ctx, db, func(ctx, tx) error { ... })"),
-	)
-
-	// This example demonstrates:
-	// 1. Configuration loading and validation
-	// 2. Multi-database setup
-	// 3. Connection pool settings
-	// 4. Transaction helpers (API demonstration)
-	// 5. Migration system integration
-	//
-	// In a real application, you would:
-	// - Use fx.App with dbx.Module() for dependency injection
-	// - Connect to actual databases
-	// - Use auto-migration and SQL migrations
-	// - Register health checks
+	// This example shows the basic dbx configuration and validation
+	// In a real application, you would use fx.App to wire everything together
 	logger.Info("DBX module example completed successfully")
 }

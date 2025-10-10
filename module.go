@@ -49,13 +49,13 @@ type Option func(*moduleConfig)
 
 // moduleConfig holds the module configuration
 type moduleConfig struct {
-	defaultName    string
-	autoMigrate    []interface{}
-	migrationsFS   fs.FS
-	migrationsDir  string
-	runMigrations  bool
-	gormConfig     *gorm.Config
-	healthChecks   bool
+	defaultName   string
+	autoMigrate   []interface{}
+	migrationsFS  fs.FS
+	migrationsDir string
+	runMigrations bool
+	gormConfig    *gorm.Config
+	healthChecks  bool
 }
 
 // WithDefault sets the default database connection name
@@ -65,7 +65,7 @@ func WithDefault(name string) Option {
 	}
 }
 
-// WithAutoMigrate enables auto-migration for the given models  
+// WithAutoMigrate enables auto-migration for the given models
 func WithAutoMigrate(models ...interface{}) Option {
 	return func(cfg *moduleConfig) {
 		cfg.autoMigrate = append(cfg.autoMigrate, models...)
@@ -133,12 +133,12 @@ func Module(opts ...Option) fx.Option {
 					connections: connections,
 					defaultName: cfg.defaultName,
 				}
-				
+
 				defaultDB := provider.Get()
 				if defaultDB == nil {
 					return nil, nil, fmt.Errorf("no default database connection available")
 				}
-				
+
 				return provider, defaultDB, nil
 			},
 		),
@@ -146,15 +146,15 @@ func Module(opts ...Option) fx.Option {
 		fx.Provide(
 			func(logger *zap.Logger, connections Connections) *MigrationRunner {
 				var opts []MigrationOption
-				
+
 				if len(cfg.autoMigrate) > 0 {
 					opts = append(opts, withAutoMigrate(cfg.autoMigrate...))
 				}
-				
+
 				if cfg.migrationsFS != nil {
 					opts = append(opts, withMigrationsFS(cfg.migrationsFS, cfg.migrationsDir))
 				}
-				
+
 				return NewMigrationRunner(logger, connections, opts...)
 			},
 		),
@@ -177,47 +177,47 @@ func Module(opts ...Option) fx.Option {
 			lc.Append(fx.Hook{
 				OnStart: func(ctx context.Context) error {
 					logger.Info("Starting dbx module")
-					
+
 					// Test all connections
 					for name, db := range connections {
 						if err := testConnection(ctx, name, db, logger); err != nil {
 							return err
 						}
 					}
-					
+
 					// Run migrations if enabled
 					if cfg.runMigrations {
 						if err := migrationRunner.RunMigrations(); err != nil {
 							return fmt.Errorf("migration failed: %w", err)
 						}
 					}
-					
+
 					// Register health checks if enabled
 					if cfg.healthChecks && healthChecker != nil {
 						// Health checks registration would be handled by the actual core registry
 						// For now, we just log that the health checker is available
 						logger.Info("Health checker initialized", zap.Int("databases", len(connections)))
 					}
-					
+
 					logger.Info("dbx module started successfully")
 					return nil
 				},
 				OnStop: func(ctx context.Context) error {
 					logger.Info("Stopping dbx module")
-					
+
 					// Close all connections
 					for name, db := range connections {
 						if sqlDB, err := db.DB(); err == nil {
 							if err := sqlDB.Close(); err != nil {
-								logger.Error("Failed to close database connection", 
-									zap.String("database", name), 
+								logger.Error("Failed to close database connection",
+									zap.String("database", name),
 									zap.Error(err))
 							} else {
 								logger.Info("Database connection closed", zap.String("database", name))
 							}
 						}
 					}
-					
+
 					logger.Info("dbx module stopped")
 					return nil
 				},
@@ -235,7 +235,7 @@ func newConnections(v *viper.Viper, logger *zap.Logger, cfg *moduleConfig) (Conn
 	}
 
 	connections := make(Connections)
-	
+
 	for name, dbCfg := range dbConfig.Databases {
 		db, err := createConnection(name, dbCfg, logger, cfg)
 		if err != nil {
@@ -254,8 +254,8 @@ func createConnection(name string, dbCfg *DatabaseConfig, logger *zap.Logger, cf
 	// Create GORM config
 	gormCfg := &gorm.Config{
 		SkipDefaultTransaction: dbCfg.SkipDefaultTx,
-		PrepareStmt:           dbCfg.PrepareStmt,
-		Logger:                NewGormLogger(logger, dbCfg.LogLevel, dbCfg.SlowThreshold),
+		PrepareStmt:            dbCfg.PrepareStmt,
+		Logger:                 NewGormLogger(logger, dbCfg.LogLevel, dbCfg.SlowThreshold),
 	}
 
 	// Override with custom config if provided
@@ -298,7 +298,7 @@ func createConnection(name string, dbCfg *DatabaseConfig, logger *zap.Logger, cf
 // testConnection tests a database connection
 func testConnection(ctx context.Context, name string, db *gorm.DB, logger *zap.Logger) error {
 	logger.Info("Testing database connection", zap.String("database", name))
-	
+
 	sqlDB, err := db.DB()
 	if err != nil {
 		return fmt.Errorf("failed to get underlying DB for %s: %w", name, err)

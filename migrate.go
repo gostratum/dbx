@@ -90,11 +90,11 @@ func (mr *MigrationRunner) runAutoMigrations() error {
 
 	for name, db := range mr.connections {
 		mr.logger.Info("Running auto-migration for database", zap.String("database", name))
-		
+
 		if err := db.AutoMigrate(mr.autoMigrate...); err != nil {
 			return fmt.Errorf("auto migration failed for database %s: %w", name, err)
 		}
-		
+
 		mr.logger.Info("Auto-migration completed for database", zap.String("database", name))
 	}
 
@@ -174,7 +174,7 @@ func (mr *MigrationRunner) createMigrationTable() error {
 
 	for name, db := range mr.connections {
 		mr.logger.Debug("Creating migration table", zap.String("database", name))
-		
+
 		if err := db.Exec(createSQL).Error; err != nil {
 			return fmt.Errorf("failed to create migration table for database %s: %w", name, err)
 		}
@@ -185,8 +185,8 @@ func (mr *MigrationRunner) createMigrationTable() error {
 
 // runMigrationsForDatabase runs migrations for a specific database
 func (mr *MigrationRunner) runMigrationsForDatabase(name string, db *gorm.DB, files []string) error {
-	mr.logger.Info("Running migrations for database", 
-		zap.String("database", name), 
+	mr.logger.Info("Running migrations for database",
+		zap.String("database", name),
 		zap.Int("files", len(files)))
 
 	for _, file := range files {
@@ -210,7 +210,7 @@ func (mr *MigrationRunner) runMigrationFile(dbName string, db *gorm.DB, filename
 	}
 
 	if count > 0 {
-		mr.logger.Debug("Migration already executed, skipping", 
+		mr.logger.Debug("Migration already executed, skipping",
 			zap.String("database", dbName),
 			zap.String("file", filename))
 		return nil
@@ -222,7 +222,7 @@ func (mr *MigrationRunner) runMigrationFile(dbName string, db *gorm.DB, filename
 		return fmt.Errorf("failed to read migration file: %w", err)
 	}
 
-	mr.logger.Info("Executing migration", 
+	mr.logger.Info("Executing migration",
 		zap.String("database", dbName),
 		zap.String("file", filename))
 
@@ -235,15 +235,15 @@ func (mr *MigrationRunner) runMigrationFile(dbName string, db *gorm.DB, filename
 
 		// Record migration
 		migrationRecord := map[string]interface{}{
-			"filename":  filepath.Base(filename),
-			"checksum":  calculateChecksum(content),
+			"filename": filepath.Base(filename),
+			"checksum": calculateChecksum(content),
 		}
 
 		if err := tx.Table("dbx_migrations").Create(migrationRecord).Error; err != nil {
 			return fmt.Errorf("failed to record migration: %w", err)
 		}
 
-		mr.logger.Info("Migration executed successfully", 
+		mr.logger.Info("Migration executed successfully",
 			zap.String("database", dbName),
 			zap.String("file", filename))
 

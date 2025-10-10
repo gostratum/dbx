@@ -102,7 +102,7 @@ func (dc *DatabaseConfig) Validate() error {
 	if dc.Driver == "" {
 		return fmt.Errorf("driver is required")
 	}
-	
+
 	if dc.DSN == "" {
 		return fmt.Errorf("dsn is required")
 	}

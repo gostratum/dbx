@@ -21,7 +21,7 @@ type zapGormLogger struct {
 // NewGormLogger creates a new GORM logger using zap
 func NewGormLogger(logger *zap.Logger, logLevel string, slowThreshold time.Duration) gormlogger.Interface {
 	var level gormlogger.LogLevel
-	
+
 	switch logLevel {
 	case "silent":
 		level = gormlogger.Silent
@@ -78,7 +78,7 @@ func (l *zapGormLogger) Trace(ctx context.Context, begin time.Time, fc func() (s
 
 	elapsed := time.Since(begin)
 	sql, rows := fc()
-	
+
 	fields := []zap.Field{
 		zap.Duration("elapsed", elapsed),
 		zap.String("sql", sql),
@@ -101,27 +101,27 @@ func (l *zapGormLogger) Trace(ctx context.Context, begin time.Time, fc func() (s
 // contextFields extracts logging fields from context
 func (l *zapGormLogger) contextFields(ctx context.Context) []zap.Field {
 	var fields []zap.Field
-	
+
 	// Extract trace ID if available
 	if traceID := ctx.Value("trace_id"); traceID != nil {
 		if id, ok := traceID.(string); ok {
 			fields = append(fields, zap.String("trace_id", id))
 		}
 	}
-	
+
 	// Extract request ID if available
 	if requestID := ctx.Value("request_id"); requestID != nil {
 		if id, ok := requestID.(string); ok {
 			fields = append(fields, zap.String("request_id", id))
 		}
 	}
-	
+
 	// Extract user ID if available
 	if userID := ctx.Value("user_id"); userID != nil {
 		if id, ok := userID.(string); ok {
 			fields = append(fields, zap.String("user_id", id))
 		}
 	}
-	
+
 	return fields
 }
