@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"time"
 
+	"github.com/gostratum/dbx/migrate"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
@@ -49,13 +50,17 @@ type Option func(*moduleConfig)
 
 // moduleConfig holds the module configuration
 type moduleConfig struct {
-	defaultName   string
-	autoMigrate   []interface{}
-	migrationsFS  fs.FS
-	migrationsDir string
-	runMigrations bool
-	gormConfig    *gorm.Config
-	healthChecks  bool
+	defaultName        string
+	autoMigrate        []interface{}
+	migrationsFS       fs.FS
+	migrationsDir      string
+	runMigrations      bool
+	gormConfig         *gorm.Config
+	healthChecks       bool
+	// New golang-migrate support
+	useGolangMigrate   bool
+	golangMigrateUseEmbed bool
+	golangMigrateDir   string
 }
 
 // WithDefault sets the default database connection name
@@ -102,6 +107,30 @@ func WithGormConfig(gormCfg *gorm.Config) Option {
 func WithHealthChecks() Option {
 	return func(cfg *moduleConfig) {
 		cfg.healthChecks = true
+	}
+}
+
+// WithGolangMigrate enables golang-migrate based migrations at startup
+// This provides first-class migration support using golang-migrate library
+func WithGolangMigrate() Option {
+	return func(cfg *moduleConfig) {
+		cfg.useGolangMigrate = true
+	}
+}
+
+// WithGolangMigrateEmbed enables golang-migrate with embedded migrations
+func WithGolangMigrateEmbed() Option {
+	return func(cfg *moduleConfig) {
+		cfg.useGolangMigrate = true
+		cfg.golangMigrateUseEmbed = true
+	}
+}
+
+// WithGolangMigrateDir sets the directory for golang-migrate filesystem migrations
+func WithGolangMigrateDir(dir string) Option {
+	return func(cfg *moduleConfig) {
+		cfg.useGolangMigrate = true
+		cfg.golangMigrateDir = dir
 	}
 }
 
@@ -173,7 +202,7 @@ func Module(opts ...Option) fx.Option {
 			},
 		),
 		// Lifecycle hooks
-		fx.Invoke(func(lc fx.Lifecycle, logger *zap.Logger, connections Connections, migrationRunner *MigrationRunner, healthChecker *HealthChecker) {
+		fx.Invoke(func(lc fx.Lifecycle, logger *zap.Logger, v *viper.Viper, connections Connections, migrationRunner *MigrationRunner, healthChecker *HealthChecker) {
 			lc.Append(fx.Hook{
 				OnStart: func(ctx context.Context) error {
 					logger.Info("Starting dbx module")
@@ -185,10 +214,17 @@ func Module(opts ...Option) fx.Option {
 						}
 					}
 
-					// Run migrations if enabled
+					// Run golang-migrate migrations if enabled
+					if cfg.useGolangMigrate {
+						if err := runGolangMigrations(ctx, logger, v, cfg); err != nil {
+							return fmt.Errorf("golang-migrate migration failed: %w", err)
+						}
+					}
+
+					// Run GORM migrations if enabled (for backward compatibility)
 					if cfg.runMigrations {
 						if err := migrationRunner.RunMigrations(); err != nil {
-							return fmt.Errorf("migration failed: %w", err)
+							return fmt.Errorf("GORM migration failed: %w", err)
 						}
 					}
 
@@ -314,4 +350,110 @@ func testConnection(ctx context.Context, name string, db *gorm.DB, logger *zap.L
 
 	logger.Info("Database connection test successful", zap.String("database", name))
 	return nil
+}
+
+// runGolangMigrations runs golang-migrate based migrations
+func runGolangMigrations(ctx context.Context, logger *zap.Logger, v *viper.Viper, cfg *moduleConfig) error {
+	logger.Info("Running golang-migrate migrations")
+
+	// Load migration config from viper
+	migrateCfg, err := loadMigrateConfigFromViper(v)
+	if err != nil {
+		logger.Warn("Failed to load migration config from viper, using defaults", zap.Error(err))
+		migrateCfg = &migrateConfig{
+			AutoMigrate: false,
+			UseEmbed:    cfg.golangMigrateUseEmbed,
+			Dir:         cfg.golangMigrateDir,
+			Table:       "schema_migrations",
+		}
+	}
+
+	// Override with module config
+	if cfg.golangMigrateUseEmbed {
+		migrateCfg.UseEmbed = true
+	}
+	if cfg.golangMigrateDir != "" {
+		migrateCfg.Dir = cfg.golangMigrateDir
+		migrateCfg.UseEmbed = false
+	}
+
+	// Check if AutoMigrate is enabled (from config)
+	if !migrateCfg.AutoMigrate {
+		logger.Info("AutoMigrate is disabled, skipping migrations")
+		return nil
+	}
+
+	// Get database URL from viper config
+	dbURL, err := getDatabaseURLFromConfig(v)
+	if err != nil {
+		return fmt.Errorf("failed to get database URL: %w", err)
+	}
+
+	// Build migration options
+	var opts []migrate.Option
+	if migrateCfg.UseEmbed {
+		opts = append(opts, migrate.WithEmbed())
+	} else if migrateCfg.Dir != "" {
+		opts = append(opts, migrate.WithDir(migrateCfg.Dir))
+	}
+	if migrateCfg.Table != "" {
+		opts = append(opts, migrate.WithTable(migrateCfg.Table))
+	}
+
+	// Run migrations
+	logger.Info("Applying pending migrations...")
+	if err := migrate.Up(ctx, dbURL, opts...); err != nil {
+		if migrate.IsNoChange(err) {
+			logger.Info("No pending migrations to apply")
+			return nil
+		}
+		return fmt.Errorf("migration failed: %w", err)
+	}
+
+	logger.Info("Migrations applied successfully")
+	return nil
+}
+
+// migrateConfig represents golang-migrate configuration
+type migrateConfig struct {
+	AutoMigrate bool
+	UseEmbed    bool
+	Dir         string
+	Table       string
+}
+
+// loadMigrateConfigFromViper loads migration config from viper
+func loadMigrateConfigFromViper(v *viper.Viper) (*migrateConfig, error) {
+	cfg := &migrateConfig{
+		AutoMigrate: v.GetBool("dbx.migrate.auto_migrate"),
+		UseEmbed:    v.GetBool("dbx.migrate.use_embed"),
+		Dir:         v.GetString("dbx.migrate.dir"),
+		Table:       v.GetString("dbx.migrate.table"),
+	}
+
+	if cfg.Table == "" {
+		cfg.Table = "schema_migrations"
+	}
+
+	return cfg, nil
+}
+
+// getDatabaseURLFromConfig extracts database URL from viper config
+func getDatabaseURLFromConfig(v *viper.Viper) (string, error) {
+	// Try direct URL first
+	if url := v.GetString("db.url"); url != "" {
+		return url, nil
+	}
+
+	// Try default database DSN
+	if dsn := v.GetString("db.databases.primary.dsn"); dsn != "" {
+		return dsn, nil
+	}
+
+	// Try from environment
+	if url := v.GetString("DATABASE_URL"); url != "" {
+		return url, nil
+	}
+
+	return "", fmt.Errorf("no database URL found in configuration")
 }
