@@ -1,0 +1,23 @@
+# Simple DBX Example Configuration
+
+# Database configuration (using new dbx format with core/configx)
+db:
+  default: primary
+  databases:
+    primary:
+      driver: sqlite
+      dsn: "file::memory:?cache=shared"
+      max_open_conns: 10
+      max_idle_conns: 5
+      conn_max_lifetime: 1h
+      conn_max_idle_time: 10m
+      log_level: info
+      slow_threshold: 100ms
+      skip_default_tx: false
+      prepare_stmt: true
+
+# Logging configuration
+log:
+  level: info
+  encoding: console
+  development: true

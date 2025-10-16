@@ -187,11 +187,12 @@ func (p *MetricsPlugin) after(dbName, operation string) func(*gorm.DB) {
 		// Record errors
 		if db.Error != nil && db.Error != gorm.ErrRecordNotFound {
 			errorType := "unknown"
-			if db.Error == context.Canceled {
+			switch db.Error {
+			case context.Canceled:
 				errorType = "canceled"
-			} else if db.Error == context.DeadlineExceeded {
+			case context.DeadlineExceeded:
 				errorType = "timeout"
-			} else {
+			default:
 				errorType = "query_error"
 			}
 			p.queryErrors.Inc(dbName, tableName, operation, errorType)
