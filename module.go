@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gostratum/dbx/migrate"
+	"github.com/gostratum/metricsx"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
@@ -199,6 +200,38 @@ func Module(opts ...Option) fx.Option {
 					return NewHealthChecker(connections, nil)
 				},
 				Group: "health_checkers",
+			},
+		),
+		// Register metrics plugin if metricsx is available
+		fx.Invoke(
+			func(params struct {
+				fx.In
+				Connections Connections
+				Logger      *zap.Logger
+				Metrics     metricsx.Metrics `optional:"true"`
+			}) {
+				if params.Metrics == nil {
+					return
+				}
+
+				params.Logger.Info("dbx: enabling database metrics")
+
+				for name, db := range params.Connections {
+					// Register metrics plugin
+					plugin := NewMetricsPlugin(params.Metrics)
+					if err := db.Use(plugin); err != nil {
+						params.Logger.Error("dbx: failed to register metrics plugin",
+							zap.String("database", name),
+							zap.Error(err),
+						)
+						continue
+					}
+
+					// Start connection pool metrics collector
+					ConnectionPoolMetrics(params.Metrics, db, name)
+
+					params.Logger.Info("dbx: metrics enabled for database", zap.String("database", name))
+				}
 			},
 		),
 		// Lifecycle hooks
