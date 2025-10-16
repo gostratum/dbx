@@ -7,13 +7,13 @@ import (
 	"sort"
 	"strings"
 
-	"go.uber.org/zap"
+	"github.com/gostratum/core/logx"
 	"gorm.io/gorm"
 )
 
 // MigrationRunner handles database migrations
 type MigrationRunner struct {
-	logger      *zap.Logger
+	logger      logx.Logger
 	connections Connections
 	fs          fs.FS
 	dir         string
@@ -25,9 +25,9 @@ type MigrationRunner struct {
 type MigrationOption func(*MigrationRunner)
 
 // NewMigrationRunner creates a new migration runner
-func NewMigrationRunner(logger *zap.Logger, connections Connections, opts ...MigrationOption) *MigrationRunner {
+func NewMigrationRunner(logger logx.Logger, connections Connections, opts ...MigrationOption) *MigrationRunner {
 	runner := &MigrationRunner{
-		logger:      logger.Named("migrations"),
+		logger:      logger.With(logx.String("component", "migrations")),
 		connections: connections,
 		autoMigrate: make([]interface{}, 0),
 		enabled:     false,
@@ -86,16 +86,16 @@ func (mr *MigrationRunner) RunMigrations() error {
 
 // runAutoMigrations runs GORM auto-migrations
 func (mr *MigrationRunner) runAutoMigrations() error {
-	mr.logger.Info("Running auto-migrations", zap.Int("models", len(mr.autoMigrate)))
+	mr.logger.Info("Running auto-migrations", logx.Int("models", len(mr.autoMigrate)))
 
 	for name, db := range mr.connections {
-		mr.logger.Info("Running auto-migration for database", zap.String("database", name))
+		mr.logger.Info("Running auto-migration for database", logx.String("database", name))
 
 		if err := db.AutoMigrate(mr.autoMigrate...); err != nil {
 			return fmt.Errorf("auto migration failed for database %s: %w", name, err)
 		}
 
-		mr.logger.Info("Auto-migration completed for database", zap.String("database", name))
+		mr.logger.Info("Auto-migration completed for database", logx.String("database", name))
 	}
 
 	return nil
@@ -103,7 +103,7 @@ func (mr *MigrationRunner) runAutoMigrations() error {
 
 // runSQLMigrations runs SQL file migrations
 func (mr *MigrationRunner) runSQLMigrations() error {
-	mr.logger.Info("Running SQL migrations", zap.String("directory", mr.dir))
+	mr.logger.Info("Running SQL migrations", logx.String("directory", mr.dir))
 
 	// Get migration files
 	files, err := mr.getMigrationFiles()
@@ -173,7 +173,7 @@ func (mr *MigrationRunner) createMigrationTable() error {
 		)`
 
 	for name, db := range mr.connections {
-		mr.logger.Debug("Creating migration table", zap.String("database", name))
+		mr.logger.Debug("Creating migration table", logx.String("database", name))
 
 		if err := db.Exec(createSQL).Error; err != nil {
 			return fmt.Errorf("failed to create migration table for database %s: %w", name, err)
@@ -186,8 +186,8 @@ func (mr *MigrationRunner) createMigrationTable() error {
 // runMigrationsForDatabase runs migrations for a specific database
 func (mr *MigrationRunner) runMigrationsForDatabase(name string, db *gorm.DB, files []string) error {
 	mr.logger.Info("Running migrations for database",
-		zap.String("database", name),
-		zap.Int("files", len(files)))
+		logx.String("database", name),
+		logx.Int("files", len(files)))
 
 	for _, file := range files {
 		if err := mr.runMigrationFile(name, db, file); err != nil {
@@ -195,7 +195,7 @@ func (mr *MigrationRunner) runMigrationsForDatabase(name string, db *gorm.DB, fi
 		}
 	}
 
-	mr.logger.Info("Migrations completed for database", zap.String("database", name))
+	mr.logger.Info("Migrations completed for database", logx.String("database", name))
 	return nil
 }
 
@@ -211,8 +211,8 @@ func (mr *MigrationRunner) runMigrationFile(dbName string, db *gorm.DB, filename
 
 	if count > 0 {
 		mr.logger.Debug("Migration already executed, skipping",
-			zap.String("database", dbName),
-			zap.String("file", filename))
+			logx.String("database", dbName),
+			logx.String("file", filename))
 		return nil
 	}
 
@@ -223,8 +223,8 @@ func (mr *MigrationRunner) runMigrationFile(dbName string, db *gorm.DB, filename
 	}
 
 	mr.logger.Info("Executing migration",
-		zap.String("database", dbName),
-		zap.String("file", filename))
+		logx.String("database", dbName),
+		logx.String("file", filename))
 
 	// Execute migration in a transaction
 	return db.Transaction(func(tx *gorm.DB) error {
@@ -244,8 +244,8 @@ func (mr *MigrationRunner) runMigrationFile(dbName string, db *gorm.DB, filename
 		}
 
 		mr.logger.Info("Migration executed successfully",
-			zap.String("database", dbName),
-			zap.String("file", filename))
+			logx.String("database", dbName),
+			logx.String("file", filename))
 
 		return nil
 	})

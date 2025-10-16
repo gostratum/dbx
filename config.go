@@ -3,29 +3,27 @@ package dbx
 import (
 	"fmt"
 	"time"
-
-	"github.com/spf13/viper"
 )
 
 // Config represents the database configuration
 type Config struct {
-	Databases map[string]*DatabaseConfig `mapstructure:"databases" yaml:"databases"`
-	Default   string                     `mapstructure:"default" yaml:"default"`
+	Databases map[string]*DatabaseConfig `mapstructure:"databases" yaml:"databases" default:"{}"`
+	Default   string                     `mapstructure:"default" yaml:"default" default:"primary"`
 }
 
 // DatabaseConfig represents configuration for a single database connection
 type DatabaseConfig struct {
 	// Database Connection Settings
-	Driver          string            `mapstructure:"driver" yaml:"driver"`
-	DSN             string            `mapstructure:"dsn" yaml:"dsn"`
-	MaxOpenConns    int               `mapstructure:"max_open_conns" yaml:"max_open_conns"`
-	MaxIdleConns    int               `mapstructure:"max_idle_conns" yaml:"max_idle_conns"`
-	ConnMaxLifetime time.Duration     `mapstructure:"conn_max_lifetime" yaml:"conn_max_lifetime"`
-	ConnMaxIdleTime time.Duration     `mapstructure:"conn_max_idle_time" yaml:"conn_max_idle_time"`
-	LogLevel        string            `mapstructure:"log_level" yaml:"log_level"`
-	SlowThreshold   time.Duration     `mapstructure:"slow_threshold" yaml:"slow_threshold"`
-	SkipDefaultTx   bool              `mapstructure:"skip_default_tx" yaml:"skip_default_tx"`
-	PrepareStmt     bool              `mapstructure:"prepare_stmt" yaml:"prepare_stmt"`
+	Driver          string            `mapstructure:"driver" yaml:"driver" default:"postgres"`
+	DSN             string            `mapstructure:"dsn" yaml:"dsn" default:"postgres://localhost/dbname?sslmode=disable"`
+	MaxOpenConns    int               `mapstructure:"max_open_conns" yaml:"max_open_conns" default:"25"`
+	MaxIdleConns    int               `mapstructure:"max_idle_conns" yaml:"max_idle_conns" default:"5"`
+	ConnMaxLifetime time.Duration     `mapstructure:"conn_max_lifetime" yaml:"conn_max_lifetime" default:"5m"`
+	ConnMaxIdleTime time.Duration     `mapstructure:"conn_max_idle_time" yaml:"conn_max_idle_time" default:"5m"`
+	LogLevel        string            `mapstructure:"log_level" yaml:"log_level" default:"warn"`
+	SlowThreshold   time.Duration     `mapstructure:"slow_threshold" yaml:"slow_threshold" default:"200ms"`
+	SkipDefaultTx   bool              `mapstructure:"skip_default_tx" yaml:"skip_default_tx" default:"false"`
+	PrepareStmt     bool              `mapstructure:"prepare_stmt" yaml:"prepare_stmt" default:"true"`
 	Params          map[string]string `mapstructure:"params" yaml:"params"`
 
 	// Migration Settings
@@ -34,22 +32,22 @@ type DatabaseConfig struct {
 	//   - "file://./migrations" - Read from filesystem directory
 	//   - "embed://" - Use embedded files (requires //go:embed in your app)
 	//   - "" (empty) - No migrations (migrations disabled)
-	MigrationSource string `mapstructure:"migration_source" yaml:"migration_source"`
+	MigrationSource string `mapstructure:"migration_source" yaml:"migration_source" default:""`
 
 	// AutoMigrate enables automatic migration on startup (default: false)
 	// WARNING: Only use in development/CI environments, NEVER in production
-	AutoMigrate bool `mapstructure:"auto_migrate" yaml:"auto_migrate"`
+	AutoMigrate bool `mapstructure:"auto_migrate" yaml:"auto_migrate" default:"false"`
 
 	// MigrationTable specifies the name of the schema migrations table
 	// Default: "schema_migrations"
-	MigrationTable string `mapstructure:"migration_table" yaml:"migration_table"`
+	MigrationTable string `mapstructure:"migration_table" yaml:"migration_table" default:"schema_migrations"`
 
 	// MigrationLockTimeout specifies how long to wait for the migration lock
 	// Default: 15 seconds
-	MigrationLockTimeout time.Duration `mapstructure:"migration_lock_timeout" yaml:"migration_lock_timeout"`
+	MigrationLockTimeout time.Duration `mapstructure:"migration_lock_timeout" yaml:"migration_lock_timeout" default:"15s"`
 
 	// MigrationVerbose enables verbose logging for migrations
-	MigrationVerbose bool `mapstructure:"migration_verbose" yaml:"migration_verbose"`
+	MigrationVerbose bool `mapstructure:"migration_verbose" yaml:"migration_verbose" default:"false"`
 }
 
 // DefaultConfig returns the default database configuration
@@ -87,23 +85,10 @@ func DefaultDatabaseConfig() *DatabaseConfig {
 	}
 }
 
-// LoadConfig loads database configuration from viper
-func LoadConfig(v *viper.Viper) (*Config, error) {
-	// Set defaults
-	setDefaults(v)
-
-	// Unmarshal into config struct
-	cfg := &Config{}
-	if err := v.UnmarshalKey("db", cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal db config: %w", err)
-	}
-
-	// Validate configuration
-	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid db config: %w", err)
-	}
-
-	return cfg, nil
+// Prefix returns the configuration prefix for this module
+// This implements the configx.Configurable interface
+func (c *Config) Prefix() string {
+	return "db"
 }
 
 // Validate validates the configuration
@@ -226,27 +211,4 @@ func (c *Config) GetDefaultDatabase() (*DatabaseConfig, error) {
 	}
 
 	return dbConfig, nil
-}
-
-// setDefaults sets default values for database configuration
-func setDefaults(v *viper.Viper) {
-	// Set default database configuration
-	v.SetDefault("db.default", "primary")
-	v.SetDefault("db.databases.primary.driver", "postgres")
-	v.SetDefault("db.databases.primary.dsn", "postgres://localhost/dbname?sslmode=disable")
-	v.SetDefault("db.databases.primary.max_open_conns", 25)
-	v.SetDefault("db.databases.primary.max_idle_conns", 5)
-	v.SetDefault("db.databases.primary.conn_max_lifetime", "5m")
-	v.SetDefault("db.databases.primary.conn_max_idle_time", "5m")
-	v.SetDefault("db.databases.primary.log_level", "warn")
-	v.SetDefault("db.databases.primary.slow_threshold", "200ms")
-	v.SetDefault("db.databases.primary.skip_default_tx", false)
-	v.SetDefault("db.databases.primary.prepare_stmt", true)
-
-	// Set default migration configuration (safe defaults)
-	v.SetDefault("db.databases.primary.migration_source", "") // Disabled by default
-	v.SetDefault("db.databases.primary.auto_migrate", false)  // NEVER enable by default
-	v.SetDefault("db.databases.primary.migration_table", "schema_migrations")
-	v.SetDefault("db.databases.primary.migration_lock_timeout", "15s")
-	v.SetDefault("db.databases.primary.migration_verbose", false)
 }

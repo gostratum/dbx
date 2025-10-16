@@ -5,10 +5,37 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gostratum/core/configx"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// testLoader is a helper to create a config loader for tests
+func testLoader(configYAML string) (configx.Loader, error) {
+	v := viper.New()
+	v.SetConfigType("yaml")
+	if err := v.ReadConfig(strings.NewReader(configYAML)); err != nil {
+		return nil, err
+	}
+
+	// Create a wrapper that implements configx.Loader
+	return &viperLoaderWrapper{v: v}, nil
+}
+
+// viperLoaderWrapper wraps viper.Viper to implement configx.Loader for tests
+type viperLoaderWrapper struct {
+	v *viper.Viper
+}
+
+func (w *viperLoaderWrapper) Bind(c configx.Configurable) error {
+	prefix := c.Prefix()
+	sub := w.v.Sub(prefix)
+	if sub == nil {
+		sub = viper.New()
+	}
+	return sub.Unmarshal(c)
+}
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
@@ -51,9 +78,6 @@ func TestDefaultDatabaseConfig(t *testing.T) {
 }
 
 func TestLoadConfigFromYAML(t *testing.T) {
-	v := viper.New()
-	v.SetConfigType("yaml")
-
 	configYAML := `
 db:
   default: test
@@ -71,10 +95,11 @@ db:
       prepare_stmt: false
 `
 
-	err := v.ReadConfig(strings.NewReader(configYAML))
+	loader, err := testLoader(configYAML)
 	require.NoError(t, err)
 
-	cfg, err := LoadConfig(v)
+	cfg := &Config{}
+	err = loader.Bind(cfg)
 	require.NoError(t, err)
 
 	assert.Equal(t, "test", cfg.Default)
@@ -94,9 +119,6 @@ db:
 }
 
 func TestLoadConfigMultipleDatabases(t *testing.T) {
-	v := viper.New()
-	v.SetConfigType("yaml")
-
 	configYAML := `
 db:
   default: primary
@@ -112,10 +134,11 @@ db:
       log_level: silent
 `
 
-	err := v.ReadConfig(strings.NewReader(configYAML))
+	loader, err := testLoader(configYAML)
 	require.NoError(t, err)
 
-	cfg, err := LoadConfig(v)
+	cfg := &Config{}
+	err = loader.Bind(cfg)
 	require.NoError(t, err)
 
 	assert.Equal(t, "primary", cfg.Default)

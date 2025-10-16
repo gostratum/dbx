@@ -1,16 +1,16 @@
 # 🗄️ DBX - Database Module for Gostratum
 
-A thin, composable SQL layer built on top of [**gostratum/core**](https://github.com/gostratum/core) providing **GORM** database integration with **Fx-first composition**, **Viper-based configuration**, and **health check integration**.
+A thin, composable SQL layer built on top of [**gostratum/core**](https://github.com/gostratum/core) providing **GORM** database integration with **Fx-first composition**, **core/configx configuration**, and **core health check integration**.
 
 ## 📦 Features
 
 - **Fx-first composition** - No globals, pure dependency injection
 - **Multi-database support** - Manage multiple database connections
-- **Config-driven setup** - Viper-based configuration with sensible defaults
+- **Config-driven setup** - Uses `core/configx` for configuration with sensible defaults
 - **Auto-migration support** - GORM model auto-migration and SQL file migrations
 - **Health integration** - Automatic readiness/liveness checks via `core.Registry`
 - **Lifecycle management** - Proper connection handling and graceful shutdown
-- **Observability-ready** - Zap logger integration with GORM
+- **Observability-ready** - Uses `core/logx` for structured logging
 - **Transaction helpers** - Simplified transaction management
 - **Connection pooling** - Configurable connection pool settings
 
@@ -91,6 +91,16 @@ func main() {
 
 ## ⚙️ Configuration
 
+### Configuration Loading
+
+The module uses `core/configx` for configuration loading. Configuration is automatically loaded from:
+
+1. **Config files** in the `./configs` directory (or path specified by `CONFIG_PATHS` env var)
+2. **Environment-specific files** (e.g., `dev.yaml`, `staging.yaml`, `prod.yaml` based on `APP_ENV`)
+3. **Environment variables** with `STRATUM_` prefix
+
+The configuration implements the `configx.Configurable` interface with the prefix `"db"`.
+
 ### Default Configuration
 
 The module uses the following default configuration:
@@ -114,16 +124,19 @@ db:
 
 ### Environment Variables
 
-You can configure using environment variables:
+Configuration can be overridden using environment variables with the `STRATUM_` prefix:
 
 ```bash
-DB_DEFAULT=primary
-DB_DATABASES_PRIMARY_DRIVER=postgres
-DB_DATABASES_PRIMARY_DSN="postgres://user:pass@localhost:5432/mydb?sslmode=disable"
-DB_DATABASES_PRIMARY_MAX_OPEN_CONNS=50
-DB_DATABASES_PRIMARY_MAX_IDLE_CONNS=10
-DB_DATABASES_PRIMARY_LOG_LEVEL=info
+# Example environment variables
+STRATUM_DB_DEFAULT=primary
+STRATUM_DB_DATABASES_PRIMARY_DRIVER=postgres
+STRATUM_DB_DATABASES_PRIMARY_DSN="postgres://user:pass@localhost:5432/mydb?sslmode=disable"
+STRATUM_DB_DATABASES_PRIMARY_MAX_OPEN_CONNS=50
+STRATUM_DB_DATABASES_PRIMARY_MAX_IDLE_CONNS=10
+STRATUM_DB_DATABASES_PRIMARY_LOG_LEVEL=info
 ```
+
+Note: The `STRATUM_` prefix is added by the `core/configx` loader. Nested keys use underscores (`_`) as separators.
 
 ### Multiple Databases
 
@@ -516,21 +529,32 @@ func main() {
 
 ```go
 func TestConfigLoading(t *testing.T) {
-    v := viper.New()
-    v.SetConfigType("yaml")
-    v.ReadConfig(strings.NewReader(`
+    // Create a test loader
+    loader, err := testLoader(`
 db:
   default: test
   databases:
     test:
       driver: postgres
       dsn: "postgres://localhost/test"
-`))
+`)
+    require.NoError(t, err)
     
-    cfg, err := dbx.LoadConfig(v)
+    cfg := &dbx.Config{}
+    err = loader.Bind(cfg)
     assert.NoError(t, err)
     assert.Equal(t, "test", cfg.Default)
     assert.Equal(t, "postgres", cfg.Databases["test"].Driver)
+}
+
+// Helper function for tests
+func testLoader(configYAML string) (configx.Loader, error) {
+    v := viper.New()
+    v.SetConfigType("yaml")
+    if err := v.ReadConfig(strings.NewReader(configYAML)); err != nil {
+        return nil, err
+    }
+    return &viperLoaderWrapper{v: v}, nil
 }
 ```
 
@@ -542,14 +566,17 @@ func TestHealthCheck(t *testing.T) {
     db, mock := gormtest.NewMockDB()
     connections := dbx.Connections{"test": db}
     
-    registry := &core.MockRegistry{}
+    registry := core.NewHealthRegistry()
     checker := dbx.NewHealthChecker(connections, registry)
     
     mock.ExpectPing()
     
     err := checker.RegisterHealthChecks()
     assert.NoError(t, err)
-    assert.True(t, registry.HasReadinessCheck("db-test-readiness"))
+    
+    // Verify checks are registered
+    result := registry.Aggregate(context.Background(), core.Readiness)
+    assert.Contains(t, result.Details, "db-test-readiness")
 }
 ```
 

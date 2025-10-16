@@ -6,11 +6,12 @@ import (
 	"io/fs"
 	"time"
 
+	"github.com/gostratum/core"
+	"github.com/gostratum/core/configx"
+	"github.com/gostratum/core/logx"
 	"github.com/gostratum/dbx/migrate"
 	"github.com/gostratum/metricsx"
-	"github.com/spf13/viper"
 	"go.uber.org/fx"
-	"go.uber.org/zap"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -152,8 +153,8 @@ func Module(opts ...Option) fx.Option {
 	return fx.Module("dbx",
 		// Provide database connections
 		fx.Provide(
-			func(v *viper.Viper, logger *zap.Logger) (Connections, error) {
-				return newConnections(v, logger, cfg)
+			func(loader configx.Loader, logger logx.Logger) (Connections, error) {
+				return newConnections(loader, logger, cfg)
 			},
 		),
 		// Provide the default database connection
@@ -174,7 +175,7 @@ func Module(opts ...Option) fx.Option {
 		),
 		// Provide migration runner
 		fx.Provide(
-			func(logger *zap.Logger, connections Connections) *MigrationRunner {
+			func(logger logx.Logger, connections Connections) *MigrationRunner {
 				var opts []MigrationOption
 
 				if len(cfg.autoMigrate) > 0 {
@@ -191,13 +192,11 @@ func Module(opts ...Option) fx.Option {
 		// Provide health checker if enabled
 		fx.Provide(
 			fx.Annotated{
-				Target: func(connections Connections) *HealthChecker {
+				Target: func(connections Connections, registry core.Registry) *HealthChecker {
 					if !cfg.healthChecks {
 						return nil
 					}
-					// For now, return a health checker without registry integration
-					// This can be enhanced when the actual core.Registry interface is available
-					return NewHealthChecker(connections, nil)
+					return NewHealthChecker(connections, registry)
 				},
 				Group: "health_checkers",
 			},
@@ -207,7 +206,7 @@ func Module(opts ...Option) fx.Option {
 			func(params struct {
 				fx.In
 				Connections Connections
-				Logger      *zap.Logger
+				Logger      logx.Logger
 				Metrics     metricsx.Metrics `optional:"true"`
 			}) {
 				if params.Metrics == nil {
@@ -221,8 +220,8 @@ func Module(opts ...Option) fx.Option {
 					plugin := NewMetricsPlugin(params.Metrics)
 					if err := db.Use(plugin); err != nil {
 						params.Logger.Error("dbx: failed to register metrics plugin",
-							zap.String("database", name),
-							zap.Error(err),
+							logx.String("database", name),
+							logx.Err(err),
 						)
 						continue
 					}
@@ -230,12 +229,12 @@ func Module(opts ...Option) fx.Option {
 					// Start connection pool metrics collector
 					ConnectionPoolMetrics(params.Metrics, db, name)
 
-					params.Logger.Info("dbx: metrics enabled for database", zap.String("database", name))
+					params.Logger.Info("dbx: metrics enabled for database", logx.String("database", name))
 				}
 			},
 		),
 		// Lifecycle hooks
-		fx.Invoke(func(lc fx.Lifecycle, logger *zap.Logger, v *viper.Viper, connections Connections, migrationRunner *MigrationRunner, healthChecker *HealthChecker) {
+		fx.Invoke(func(lc fx.Lifecycle, logger logx.Logger, loader configx.Loader, connections Connections, migrationRunner *MigrationRunner, healthChecker *HealthChecker) {
 			lc.Append(fx.Hook{
 				OnStart: func(ctx context.Context) error {
 					logger.Info("Starting dbx module")
@@ -249,7 +248,7 @@ func Module(opts ...Option) fx.Option {
 
 					// Run golang-migrate migrations if enabled
 					if cfg.useGolangMigrate {
-						if err := runGolangMigrations(ctx, logger, v, cfg); err != nil {
+						if err := runGolangMigrations(ctx, logger, loader, cfg); err != nil {
 							return fmt.Errorf("golang-migrate migration failed: %w", err)
 						}
 					}
@@ -263,9 +262,11 @@ func Module(opts ...Option) fx.Option {
 
 					// Register health checks if enabled
 					if cfg.healthChecks && healthChecker != nil {
-						// Health checks registration would be handled by the actual core registry
-						// For now, we just log that the health checker is available
-						logger.Info("Health checker initialized", zap.Int("databases", len(connections)))
+						if err := healthChecker.RegisterHealthChecks(); err != nil {
+							logger.Error("Failed to register health checks", logx.Err(err))
+						} else {
+							logger.Info("Health checks registered", logx.Int("databases", len(connections)))
+						}
 					}
 
 					logger.Info("dbx module started successfully")
@@ -279,10 +280,10 @@ func Module(opts ...Option) fx.Option {
 						if sqlDB, err := db.DB(); err == nil {
 							if err := sqlDB.Close(); err != nil {
 								logger.Error("Failed to close database connection",
-									zap.String("database", name),
-									zap.Error(err))
+									logx.String("database", name),
+									logx.Err(err))
 							} else {
-								logger.Info("Database connection closed", zap.String("database", name))
+								logger.Info("Database connection closed", logx.String("database", name))
 							}
 						}
 					}
@@ -296,11 +297,16 @@ func Module(opts ...Option) fx.Option {
 }
 
 // newConnections creates database connections based on configuration
-func newConnections(v *viper.Viper, logger *zap.Logger, cfg *moduleConfig) (Connections, error) {
-	// Load configuration
-	dbConfig, err := LoadConfig(v)
-	if err != nil {
+func newConnections(loader configx.Loader, logger logx.Logger, cfg *moduleConfig) (Connections, error) {
+	// Load configuration using core configx pattern
+	dbConfig := DefaultConfig()
+	if err := loader.Bind(dbConfig); err != nil {
 		return nil, fmt.Errorf("failed to load database configuration: %w", err)
+	}
+
+	// Validate configuration
+	if err := dbConfig.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid database configuration: %w", err)
 	}
 
 	connections := make(Connections)
@@ -317,8 +323,8 @@ func newConnections(v *viper.Viper, logger *zap.Logger, cfg *moduleConfig) (Conn
 }
 
 // createConnection creates a single database connection
-func createConnection(name string, dbCfg *DatabaseConfig, logger *zap.Logger, cfg *moduleConfig) (*gorm.DB, error) {
-	logger.Info("Creating database connection", zap.String("database", name), zap.String("driver", dbCfg.Driver))
+func createConnection(name string, dbCfg *DatabaseConfig, logger logx.Logger, cfg *moduleConfig) (*gorm.DB, error) {
+	logger.Info("Creating database connection", logx.String("database", name), logx.String("driver", dbCfg.Driver))
 
 	// Create GORM config
 	gormCfg := &gorm.Config{
@@ -360,13 +366,13 @@ func createConnection(name string, dbCfg *DatabaseConfig, logger *zap.Logger, cf
 	sqlDB.SetConnMaxLifetime(dbCfg.ConnMaxLifetime)
 	sqlDB.SetConnMaxIdleTime(dbCfg.ConnMaxIdleTime)
 
-	logger.Info("Database connection created successfully", zap.String("database", name))
+	logger.Info("Database connection created successfully", logx.String("database", name))
 	return db, nil
 }
 
 // testConnection tests a database connection
-func testConnection(ctx context.Context, name string, db *gorm.DB, logger *zap.Logger) error {
-	logger.Info("Testing database connection", zap.String("database", name))
+func testConnection(ctx context.Context, name string, db *gorm.DB, logger logx.Logger) error {
+	logger.Info("Testing database connection", logx.String("database", name))
 
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -381,17 +387,17 @@ func testConnection(ctx context.Context, name string, db *gorm.DB, logger *zap.L
 		return fmt.Errorf("database ping failed for %s: %w", name, err)
 	}
 
-	logger.Info("Database connection test successful", zap.String("database", name))
+	logger.Info("Database connection test successful", logx.String("database", name))
 	return nil
 }
 
 // runGolangMigrations runs golang-migrate based migrations
-func runGolangMigrations(ctx context.Context, logger *zap.Logger, v *viper.Viper, cfg *moduleConfig) error {
+func runGolangMigrations(ctx context.Context, logger logx.Logger, loader configx.Loader, cfg *moduleConfig) error {
 	logger.Info("Running golang-migrate migrations")
 
 	// Load database configuration to get migration settings
-	dbConfig, err := LoadConfig(v)
-	if err != nil {
+	dbConfig := DefaultConfig()
+	if err := loader.Bind(dbConfig); err != nil {
 		return fmt.Errorf("failed to load database config: %w", err)
 	}
 
@@ -422,10 +428,10 @@ func runGolangMigrations(ctx context.Context, logger *zap.Logger, v *viper.Viper
 	}
 
 	logger.Info("Migration settings loaded",
-		zap.String("source", migrationSource),
-		zap.Bool("auto_migrate", autoMigrate),
-		zap.String("table", defaultDB.MigrationTable),
-		zap.Duration("lock_timeout", defaultDB.MigrationLockTimeout),
+		logx.String("source", migrationSource),
+		logx.Bool("auto_migrate", autoMigrate),
+		logx.String("table", defaultDB.MigrationTable),
+		logx.Duration("lock_timeout", defaultDB.MigrationLockTimeout),
 	)
 
 	// Build migration options based on source type

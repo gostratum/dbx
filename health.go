@@ -5,35 +5,37 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gostratum/core"
 	"gorm.io/gorm"
 )
 
-// HealthCheckFunc represents a health check function
-type HealthCheckFunc func(ctx context.Context) error
-
-// HealthCheck represents a health check configuration
-type HealthCheck struct {
-	Name        string
-	Description string
-	CheckFunc   HealthCheckFunc
-	Timeout     time.Duration
-	Tags        []string
+// dbCheck implements core.Check for database health checks
+type dbCheck struct {
+	name      string
+	kind      core.Kind
+	checkFunc func(ctx context.Context) error
 }
 
-// HealthRegistry interface for registering health checks
-type HealthRegistry interface {
-	RegisterReadinessCheck(check *HealthCheck) error
-	RegisterLivenessCheck(check *HealthCheck) error
+func (c *dbCheck) Name() string {
+	return c.name
+}
+
+func (c *dbCheck) Kind() core.Kind {
+	return c.kind
+}
+
+func (c *dbCheck) Check(ctx context.Context) error {
+	return c.checkFunc(ctx)
 }
 
 // HealthChecker provides health check functionality for database connections
 type HealthChecker struct {
 	connections Connections
-	registry    HealthRegistry
+	registry    core.Registry
 }
 
 // NewHealthChecker creates a new health checker for database connections
-func NewHealthChecker(connections Connections, registry HealthRegistry) *HealthChecker {
+func NewHealthChecker(connections Connections, registry core.Registry) *HealthChecker {
 	return &HealthChecker{
 		connections: connections,
 		registry:    registry,
@@ -42,40 +44,35 @@ func NewHealthChecker(connections Connections, registry HealthRegistry) *HealthC
 
 // RegisterHealthChecks registers health checks for all database connections
 func (hc *HealthChecker) RegisterHealthChecks() error {
+	if hc.registry == nil {
+		return nil // Skip if no registry provided
+	}
+
 	for name, db := range hc.connections {
 		// Create readiness check
-		readinessCheck := &HealthCheck{
-			Name:        fmt.Sprintf("db-%s-readiness", name),
-			Description: fmt.Sprintf("Database %s readiness check", name),
-			CheckFunc:   hc.createReadinessCheck(db),
-			Timeout:     5 * time.Second,
-			Tags:        []string{"database", "readiness", name},
+		readinessCheck := &dbCheck{
+			name:      fmt.Sprintf("db-%s-readiness", name),
+			kind:      core.Readiness,
+			checkFunc: hc.createReadinessCheck(db),
 		}
 
 		// Create liveness check
-		livenessCheck := &HealthCheck{
-			Name:        fmt.Sprintf("db-%s-liveness", name),
-			Description: fmt.Sprintf("Database %s liveness check", name),
-			CheckFunc:   hc.createLivenessCheck(db),
-			Timeout:     10 * time.Second,
-			Tags:        []string{"database", "liveness", name},
+		livenessCheck := &dbCheck{
+			name:      fmt.Sprintf("db-%s-liveness", name),
+			kind:      core.Liveness,
+			checkFunc: hc.createLivenessCheck(db),
 		}
 
 		// Register checks
-		if err := hc.registry.RegisterReadinessCheck(readinessCheck); err != nil {
-			return fmt.Errorf("failed to register readiness check for db %s: %w", name, err)
-		}
-
-		if err := hc.registry.RegisterLivenessCheck(livenessCheck); err != nil {
-			return fmt.Errorf("failed to register liveness check for db %s: %w", name, err)
-		}
+		hc.registry.Register(readinessCheck)
+		hc.registry.Register(livenessCheck)
 	}
 
 	return nil
 }
 
 // createReadinessCheck creates a readiness check function for a database
-func (hc *HealthChecker) createReadinessCheck(db *gorm.DB) HealthCheckFunc {
+func (hc *HealthChecker) createReadinessCheck(db *gorm.DB) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		// Get the underlying sql.DB
 		sqlDB, err := db.DB()
@@ -97,7 +94,7 @@ func (hc *HealthChecker) createReadinessCheck(db *gorm.DB) HealthCheckFunc {
 }
 
 // createLivenessCheck creates a liveness check function for a database
-func (hc *HealthChecker) createLivenessCheck(db *gorm.DB) HealthCheckFunc {
+func (hc *HealthChecker) createLivenessCheck(db *gorm.DB) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		// Get the underlying sql.DB
 		sqlDB, err := db.DB()
