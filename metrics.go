@@ -90,54 +90,51 @@ func (p *MetricsPlugin) registerCallbacks(db *gorm.DB) error {
 		dbName = dbConfig.Name()
 	}
 
-	// Register before callbacks to track start time and active queries
-	beforeCallbacks := []string{
-		"gorm:create:before",
-		"gorm:query:before",
-		"gorm:update:before",
-		"gorm:delete:before",
-		"gorm:raw:before",
-		"gorm:row:before",
+	// Register Create callbacks
+	if err := db.Callback().Create().Before("gorm:create").Register(metricsPluginName+":before", p.before(dbName)); err != nil {
+		return err
+	}
+	if err := db.Callback().Create().After("gorm:after_create").Register(metricsPluginName+":after", p.after(dbName, "create")); err != nil {
+		return err
 	}
 
-	for _, name := range beforeCallbacks {
-		if err := db.Callback().Create().Before(name).Register(metricsPluginName+":before", p.before(dbName)); err != nil {
-			return err
-		}
-		if err := db.Callback().Query().Before(name).Register(metricsPluginName+":before", p.before(dbName)); err != nil {
-			return err
-		}
-		if err := db.Callback().Update().Before(name).Register(metricsPluginName+":before", p.before(dbName)); err != nil {
-			return err
-		}
-		if err := db.Callback().Delete().Before(name).Register(metricsPluginName+":before", p.before(dbName)); err != nil {
-			return err
-		}
-		if err := db.Callback().Raw().Before(name).Register(metricsPluginName+":before", p.before(dbName)); err != nil {
-			return err
-		}
-		if err := db.Callback().Row().Before(name).Register(metricsPluginName+":before", p.before(dbName)); err != nil {
-			return err
-		}
+	// Register Query callbacks
+	if err := db.Callback().Query().Before("gorm:query").Register(metricsPluginName+":before", p.before(dbName)); err != nil {
+		return err
+	}
+	if err := db.Callback().Query().After("gorm:after_query").Register(metricsPluginName+":after", p.after(dbName, "select")); err != nil {
+		return err
 	}
 
-	// Register after callbacks to track metrics
-	if err := db.Callback().Create().After("gorm:create:after").Register(metricsPluginName+":after", p.after(dbName, "create")); err != nil {
+	// Register Update callbacks
+	if err := db.Callback().Update().Before("gorm:update").Register(metricsPluginName+":before", p.before(dbName)); err != nil {
 		return err
 	}
-	if err := db.Callback().Query().After("gorm:query:after").Register(metricsPluginName+":after", p.after(dbName, "select")); err != nil {
+	if err := db.Callback().Update().After("gorm:after_update").Register(metricsPluginName+":after", p.after(dbName, "update")); err != nil {
 		return err
 	}
-	if err := db.Callback().Update().After("gorm:update:after").Register(metricsPluginName+":after", p.after(dbName, "update")); err != nil {
+
+	// Register Delete callbacks
+	if err := db.Callback().Delete().Before("gorm:delete").Register(metricsPluginName+":before", p.before(dbName)); err != nil {
 		return err
 	}
-	if err := db.Callback().Delete().After("gorm:delete:after").Register(metricsPluginName+":after", p.after(dbName, "delete")); err != nil {
+	if err := db.Callback().Delete().After("gorm:after_delete").Register(metricsPluginName+":after", p.after(dbName, "delete")); err != nil {
 		return err
 	}
-	if err := db.Callback().Raw().After("gorm:raw:after").Register(metricsPluginName+":after", p.after(dbName, "raw")); err != nil {
+
+	// Register Raw callbacks
+	if err := db.Callback().Raw().Before("gorm:raw").Register(metricsPluginName+":before", p.before(dbName)); err != nil {
 		return err
 	}
-	if err := db.Callback().Row().After("gorm:row:after").Register(metricsPluginName+":after", p.after(dbName, "row")); err != nil {
+	if err := db.Callback().Raw().After("gorm:after_raw").Register(metricsPluginName+":after", p.after(dbName, "raw")); err != nil {
+		return err
+	}
+
+	// Register Row callbacks
+	if err := db.Callback().Row().Before("gorm:row").Register(metricsPluginName+":before", p.before(dbName)); err != nil {
+		return err
+	}
+	if err := db.Callback().Row().After("gorm:after_row").Register(metricsPluginName+":after", p.after(dbName, "row")); err != nil {
 		return err
 	}
 
@@ -200,8 +197,8 @@ func (p *MetricsPlugin) after(dbName, operation string) func(*gorm.DB) {
 	}
 }
 
-// ConnectionPoolMetrics adds connection pool metrics if available
-func ConnectionPoolMetrics(metrics metricsx.Metrics, db *gorm.DB, dbName string) {
+// ConnectionPoolMetricsWithContext adds connection pool metrics with context for cleanup
+func ConnectionPoolMetricsWithContext(metrics metricsx.Metrics, db *gorm.DB, dbName string, stopChan <-chan struct{}) {
 	// Create connection pool metrics
 	maxOpenConnections := metrics.Gauge(
 		"db_max_open_connections",
@@ -262,17 +259,22 @@ func ConnectionPoolMetrics(metrics metricsx.Metrics, db *gorm.DB, dbName string)
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 
-		for range ticker.C {
-			stats := sqlDB.Stats()
+		for {
+			select {
+			case <-ticker.C:
+				stats := sqlDB.Stats()
 
-			maxOpenConnections.Set(float64(stats.MaxOpenConnections), dbName)
-			openConnections.Set(float64(stats.OpenConnections), dbName)
-			inUseConnections.Set(float64(stats.InUse), dbName)
-			idleConnections.Set(float64(stats.Idle), dbName)
-			waitCount.Set(float64(stats.WaitCount), dbName)
-			waitDuration.Set(stats.WaitDuration.Seconds(), dbName)
-			maxIdleClosed.Set(float64(stats.MaxIdleClosed), dbName)
-			maxLifetimeClosed.Set(float64(stats.MaxLifetimeClosed), dbName)
+				maxOpenConnections.Set(float64(stats.MaxOpenConnections), dbName)
+				openConnections.Set(float64(stats.OpenConnections), dbName)
+				inUseConnections.Set(float64(stats.InUse), dbName)
+				idleConnections.Set(float64(stats.Idle), dbName)
+				waitCount.Set(float64(stats.WaitCount), dbName)
+				waitDuration.Set(stats.WaitDuration.Seconds(), dbName)
+				maxIdleClosed.Set(float64(stats.MaxIdleClosed), dbName)
+				maxLifetimeClosed.Set(float64(stats.MaxLifetimeClosed), dbName)
+			case <-stopChan:
+				return
+			}
 		}
 	}()
 }

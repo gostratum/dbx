@@ -203,7 +203,7 @@ func Module(opts ...Option) fx.Option {
 		),
 		// Register metrics plugin if metricsx is available
 		fx.Invoke(
-			func(params struct {
+			func(lc fx.Lifecycle, params struct {
 				fx.In
 				Connections Connections
 				Logger      logx.Logger
@@ -214,6 +214,9 @@ func Module(opts ...Option) fx.Option {
 				}
 
 				params.Logger.Info("dbx: enabling database metrics")
+
+				// Channel to stop metrics collection
+				stopChan := make(chan struct{})
 
 				for name, db := range params.Connections {
 					// Register metrics plugin
@@ -226,11 +229,20 @@ func Module(opts ...Option) fx.Option {
 						continue
 					}
 
-					// Start connection pool metrics collector
-					ConnectionPoolMetrics(params.Metrics, db, name)
+					// Start connection pool metrics collector with context
+					ConnectionPoolMetricsWithContext(params.Metrics, db, name, stopChan)
 
 					params.Logger.Info("dbx: metrics enabled for database", logx.String("database", name))
 				}
+
+				// Add lifecycle hook to stop metrics collection
+				lc.Append(fx.Hook{
+					OnStop: func(ctx context.Context) error {
+						params.Logger.Info("dbx: stopping metrics collection")
+						close(stopChan)
+						return nil
+					},
+				})
 			},
 		),
 		// Lifecycle hooks
