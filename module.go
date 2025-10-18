@@ -313,6 +313,16 @@ func Module(opts ...Option) fx.Option {
 func newConnections(loader configx.Loader, logger logx.Logger, cfg *moduleConfig) (Connections, error) {
 	// Load configuration using core configx pattern
 	dbConfig := DefaultConfig()
+	// Bind DB env variables to viper keys for databases so that env-provided
+	// DSNs are available during Bind. Keep this DB-specific behavior here
+	// to avoid leaking database concerns into configx.
+	for name := range dbConfig.Databases {
+		key := fmt.Sprintf("databases.%s.dsn", name)
+		env := fmt.Sprintf("DB_DATABASES_%s_DSN", strings.ToUpper(strings.ReplaceAll(name, "-", "_")))
+		envStratum := fmt.Sprintf("STRATUM_%s", strings.ToUpper(strings.ReplaceAll(name, "-", "_")))
+		_ = loader.BindEnv(key, env, envStratum)
+	}
+
 	if err := loader.Bind(dbConfig); err != nil {
 		return nil, fmt.Errorf("failed to load database configuration: %w", err)
 	}
