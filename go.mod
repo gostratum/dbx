@@ -4,7 +4,7 @@ go 1.25.1
 
 require (
 	github.com/golang-migrate/migrate/v4 v4.19.0
-	github.com/gostratum/core v0.1.5
+	github.com/gostratum/core v0.1.6
 	github.com/gostratum/metricsx v0.1.2
 	github.com/jackc/pgx/v5 v5.7.1
 	github.com/spf13/viper v1.21.0

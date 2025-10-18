@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spf13/viper"
+	"github.com/gostratum/dbx/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -165,7 +165,7 @@ func TestConfigValidation(t *testing.T) {
 
 func TestNewConfigFromViper(t *testing.T) {
 	t.Run("Load from viper with defaults", func(t *testing.T) {
-		v := viper.New()
+		v := testutil.NewViper()
 		cfg, err := NewConfig(v)
 
 		require.NoError(t, err)
@@ -177,7 +177,7 @@ func TestNewConfigFromViper(t *testing.T) {
 	})
 
 	t.Run("Load from unified configuration (databases.primary)", func(t *testing.T) {
-		v := viper.New()
+		v := testutil.NewViper()
 		v.Set("databases.primary.auto_migrate", true)
 		v.Set("databases.primary.migration_source", "file://./migrations")
 		v.Set("databases.primary.migration_table", "unified_migrations")
@@ -196,7 +196,7 @@ func TestNewConfigFromViper(t *testing.T) {
 	})
 
 	t.Run("Load from unified configuration with embed source", func(t *testing.T) {
-		v := viper.New()
+		v := testutil.NewViper()
 		v.Set("databases.primary.auto_migrate", false)
 		v.Set("databases.primary.migration_source", "embed://")
 		v.Set("databases.primary.migration_table", "embedded_migrations")
@@ -211,7 +211,7 @@ func TestNewConfigFromViper(t *testing.T) {
 	})
 
 	t.Run("Load with file source without protocol prefix", func(t *testing.T) {
-		v := viper.New()
+		v := testutil.NewViper()
 		v.Set("databases.primary.migration_source", "./migrations")
 		v.Set("databases.primary.migration_table", "no_prefix_migrations")
 
@@ -224,7 +224,7 @@ func TestNewConfigFromViper(t *testing.T) {
 	})
 
 	t.Run("Load with empty migration source", func(t *testing.T) {
-		v := viper.New()
+		v := testutil.NewViper()
 		v.Set("databases.primary.auto_migrate", false)
 		v.Set("databases.primary.migration_table", "no_source_table")
 
@@ -238,7 +238,7 @@ func TestNewConfigFromViper(t *testing.T) {
 	})
 
 	t.Run("Error on AutoMigrate without source", func(t *testing.T) {
-		v := viper.New()
+		v := testutil.NewViper()
 		v.Set("databases.primary.auto_migrate", true)
 		// No migration source provided
 
@@ -249,7 +249,7 @@ func TestNewConfigFromViper(t *testing.T) {
 	})
 
 	t.Run("Load with custom lock timeout", func(t *testing.T) {
-		v := viper.New()
+		v := testutil.NewViper()
 		v.Set("databases.primary.migration_source", "embed://")
 		v.Set("databases.primary.migration_lock_timeout", "2m30s")
 

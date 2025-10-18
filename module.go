@@ -367,7 +367,7 @@ func createConnection(name string, dbCfg *DatabaseConfig, logger logx.Logger, cf
 	var dialector gorm.Dialector
 	switch dbCfg.Driver {
 	case "postgres":
-		dialector = postgres.Open(dbCfg.DSN)
+		dialector = postgres.Open(dbCfg.GetDSN())
 	default:
 		return nil, fmt.Errorf("unsupported database driver: %s", dbCfg.Driver)
 	}

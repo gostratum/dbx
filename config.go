@@ -14,8 +14,15 @@ type Config struct {
 // DatabaseConfig represents configuration for a single database connection
 type DatabaseConfig struct {
 	// Database Connection Settings
-	Driver          string            `mapstructure:"driver" yaml:"driver" default:"postgres"`
-	DSN             string            `mapstructure:"dsn" yaml:"dsn"`
+	Driver string `mapstructure:"driver" yaml:"driver" default:"postgres"`
+	DSN    string `mapstructure:"dsn" yaml:"dsn"`
+	// Connection components (optional) - if DSN is not provided these are used to build one
+	Host            string            `mapstructure:"host" yaml:"host"`
+	Port            int               `mapstructure:"port" yaml:"port"`
+	User            string            `mapstructure:"user" yaml:"user"`
+	Password        string            `mapstructure:"password" yaml:"password"`
+	DBName          string            `mapstructure:"dbname" yaml:"dbname"`
+	SSLMode         string            `mapstructure:"sslmode" yaml:"sslmode"`
 	MaxOpenConns    int               `mapstructure:"max_open_conns" yaml:"max_open_conns" default:"25"`
 	MaxIdleConns    int               `mapstructure:"max_idle_conns" yaml:"max_idle_conns" default:"5"`
 	ConnMaxLifetime time.Duration     `mapstructure:"conn_max_lifetime" yaml:"conn_max_lifetime" default:"5m"`
@@ -65,7 +72,8 @@ func DefaultDatabaseConfig() *DatabaseConfig {
 	return &DatabaseConfig{
 		// Database Connection Settings
 		Driver:          "postgres",
-		DSN:             "postgres://localhost/dbname?sslmode=disable",
+		Host:            "localhost",
+		Port:            5432,
 		MaxOpenConns:    25,
 		MaxIdleConns:    5,
 		ConnMaxLifetime: 5 * time.Minute,
@@ -120,8 +128,11 @@ func (dc *DatabaseConfig) Validate() error {
 		return fmt.Errorf("driver is required")
 	}
 
+	// Accept either a full DSN or component fields (DBName at minimum)
 	if dc.DSN == "" {
-		return fmt.Errorf("dsn is required")
+		if dc.DBName == "" {
+			return fmt.Errorf("dsn is required or provide dbname/user/host to build one")
+		}
 	}
 
 	if dc.MaxOpenConns < 0 {
@@ -172,7 +183,40 @@ func isValidFileURL(s string) bool {
 
 // GetDSN returns the database DSN
 func (dc *DatabaseConfig) GetDSN() string {
-	return dc.DSN
+	if dc.DSN != "" {
+		return dc.DSN
+	}
+	// Build a DSN from components (Postgres)
+	return dc.BuildDSN()
+}
+
+// BuildDSN builds a postgres DSN from components. It will prefer explicit fields
+// and fall back to sensible defaults where appropriate.
+func (dc *DatabaseConfig) BuildDSN() string {
+	// minimal builder: user/password@host:port/dbname?sslmode=...
+	userPart := ""
+	if dc.User != "" {
+		userPart = dc.User
+		if dc.Password != "" {
+			userPart += ":" + dc.Password
+		}
+		userPart += "@"
+	}
+
+	host := dc.Host
+	if host == "" {
+		host = "localhost"
+	}
+	port := dc.Port
+	if port == 0 {
+		port = 5432
+	}
+	ssl := dc.SSLMode
+	if ssl == "" {
+		ssl = "disable"
+	}
+
+	return fmt.Sprintf("postgres://%s%s:%d/%s?sslmode=%s", userPart, host, port, dc.DBName, ssl)
 }
 
 // GetMigrationSource returns the migration source

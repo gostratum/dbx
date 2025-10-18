@@ -530,7 +530,7 @@ func main() {
 ```go
 func TestConfigLoading(t *testing.T) {
     // Create a test loader
-    loader, err := testLoader(`
+    loader, err := newConfigLoader(`
 db:
   default: test
   databases:
@@ -547,15 +547,6 @@ db:
     assert.Equal(t, "postgres", cfg.Databases["test"].Driver)
 }
 
-// Helper function for tests
-func testLoader(configYAML string) (configx.Loader, error) {
-    v := viper.New()
-    v.SetConfigType("yaml")
-    if err := v.ReadConfig(strings.NewReader(configYAML)); err != nil {
-        return nil, err
-    }
-    return &viperLoaderWrapper{v: v}, nil
-}
 ```
 
 ### Health Check Test
