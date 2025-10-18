@@ -317,7 +317,7 @@ func newConnections(loader configx.Loader, logger logx.Logger, cfg *moduleConfig
 	// DSNs are available during Bind. Keep this DB-specific behavior here
 	// to avoid leaking database concerns into configx.
 	for name := range dbConfig.Databases {
-		key := fmt.Sprintf("databases.%s.dsn", name)
+		key := fmt.Sprintf("db.databases.%s.dsn", name)
 		env := fmt.Sprintf("DB_DATABASES_%s_DSN", strings.ToUpper(strings.ReplaceAll(name, "-", "_")))
 		envStratum := fmt.Sprintf("STRATUM_%s", strings.ToUpper(strings.ReplaceAll(name, "-", "_")))
 		_ = loader.BindEnv(key, env, envStratum)
