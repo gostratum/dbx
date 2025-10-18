@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"strings"
 	"time"
 
 	"github.com/gostratum/core"
@@ -53,7 +54,7 @@ type Option func(*moduleConfig)
 // moduleConfig holds the module configuration
 type moduleConfig struct {
 	defaultName   string
-	autoMigrate   []interface{}
+	autoMigrate   []any
 	migrationsFS  fs.FS
 	migrationsDir string
 	runMigrations bool
@@ -73,7 +74,7 @@ func WithDefault(name string) Option {
 }
 
 // WithAutoMigrate enables auto-migration for the given models
-func WithAutoMigrate(models ...interface{}) Option {
+func WithAutoMigrate(models ...any) Option {
 	return func(cfg *moduleConfig) {
 		cfg.autoMigrate = append(cfg.autoMigrate, models...)
 	}
@@ -140,7 +141,7 @@ func WithGolangMigrateDir(dir string) Option {
 func Module(opts ...Option) fx.Option {
 	cfg := &moduleConfig{
 		defaultName:   "",
-		autoMigrate:   make([]interface{}, 0),
+		autoMigrate:   make([]any, 0),
 		runMigrations: false,
 		healthChecks:  true, // enabled by default
 	}

@@ -15,7 +15,7 @@ type Config struct {
 type DatabaseConfig struct {
 	// Database Connection Settings
 	Driver          string            `mapstructure:"driver" yaml:"driver" default:"postgres"`
-	DSN             string            `mapstructure:"dsn" yaml:"dsn" default:"postgres://localhost/dbname?sslmode=disable"`
+	DSN             string            `mapstructure:"dsn" yaml:"dsn"`
 	MaxOpenConns    int               `mapstructure:"max_open_conns" yaml:"max_open_conns" default:"25"`
 	MaxIdleConns    int               `mapstructure:"max_idle_conns" yaml:"max_idle_conns" default:"5"`
 	ConnMaxLifetime time.Duration     `mapstructure:"conn_max_lifetime" yaml:"conn_max_lifetime" default:"5m"`

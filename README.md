@@ -191,7 +191,7 @@ Sets the default database connection name.
 dbx.Module(dbx.WithDefault("primary"))
 ```
 
-### `WithAutoMigrate(models ...interface{})`
+### `WithAutoMigrate(models ...any)`
 Enables GORM auto-migration for specified models.
 
 ```go

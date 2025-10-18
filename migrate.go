@@ -17,7 +17,7 @@ type MigrationRunner struct {
 	connections Connections
 	fs          fs.FS
 	dir         string
-	autoMigrate []interface{}
+	autoMigrate []any
 	enabled     bool
 }
 
@@ -29,7 +29,7 @@ func NewMigrationRunner(logger logx.Logger, connections Connections, opts ...Mig
 	runner := &MigrationRunner{
 		logger:      logger.With(logx.String("component", "migrations")),
 		connections: connections,
-		autoMigrate: make([]interface{}, 0),
+		autoMigrate: make([]any, 0),
 		enabled:     false,
 	}
 
@@ -50,7 +50,7 @@ func withMigrationsFS(filesystem fs.FS, directory string) MigrationOption {
 }
 
 // withAutoMigrate sets models for auto-migration
-func withAutoMigrate(models ...interface{}) MigrationOption {
+func withAutoMigrate(models ...any) MigrationOption {
 	return func(r *MigrationRunner) {
 		r.autoMigrate = append(r.autoMigrate, models...)
 		r.enabled = true
@@ -234,7 +234,7 @@ func (mr *MigrationRunner) runMigrationFile(dbName string, db *gorm.DB, filename
 		}
 
 		// Record migration
-		migrationRecord := map[string]interface{}{
+		migrationRecord := map[string]any{
 			"filename": filepath.Base(filename),
 			"checksum": calculateChecksum(content),
 		}

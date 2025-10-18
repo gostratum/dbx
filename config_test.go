@@ -1,6 +1,7 @@
 package dbx
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +36,12 @@ func (w *viperLoaderWrapper) Bind(c configx.Configurable) error {
 		sub = viper.New()
 	}
 	return sub.Unmarshal(c)
+}
+
+// BindEnv binds a viper key to one or more environment variable names for tests.
+func (w *viperLoaderWrapper) BindEnv(key string, envVars ...string) error {
+	args := append([]string{key}, envVars...)
+	return w.v.BindEnv(args...)
 }
 
 func TestDefaultConfig(t *testing.T) {
@@ -389,4 +396,28 @@ func TestDatabaseConfigMigrationInterface(t *testing.T) {
 	assert.Equal(t, "custom_migrations", cfg.GetMigrationTable())
 	assert.Equal(t, 30*time.Second, cfg.GetMigrationLockTimeout())
 	assert.True(t, cfg.GetMigrationVerbose())
+}
+
+func TestLoadConfigFromEnv(t *testing.T) {
+	// Start with an otherwise-empty db config so env can override the DSN
+	// Use a clean inline YAML string; avoids issues with backtick literals and
+	// preserves the same behavior as other YAML-based tests.
+	configYAML := "db:\n  default: primary\n  databases:\n    primary: {}\n"
+	loader, err := testLoader(configYAML)
+	require.NoError(t, err)
+
+	// Set the environment variable and bind it through the loader (what the
+	// module does before calling Bind)
+	envVal := "postgres://env_user:env_pass@localhost:5432/envdb?sslmode=disable"
+	os.Setenv("STRATUM_DB_DATABASES_PRIMARY_DSN", envVal)
+	defer os.Unsetenv("STRATUM_DB_DATABASES_PRIMARY_DSN")
+
+	// Bind the env var to the viper key used by dbx on the underlying viper
+	// instance and ensure the env overrides the value.
+	w := loader.(*viperLoaderWrapper)
+	require.NoError(t, w.v.BindEnv("databases.primary.dsn", "STRATUM_DB_DATABASES_PRIMARY_DSN"))
+
+	// The bound env var should be visible via viper GetString
+	got := w.v.GetString("databases.primary.dsn")
+	assert.Equal(t, envVal, got)
 }

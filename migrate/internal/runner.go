@@ -144,7 +144,7 @@ func (r *Runner) Close() error {
 // verboseLogger implements migrate.Logger interface
 type verboseLogger struct{}
 
-func (l *verboseLogger) Printf(format string, v ...interface{}) {
+func (l *verboseLogger) Printf(format string, v ...any) {
 	fmt.Printf("[MIGRATE] "+format+"\n", v...)
 }
 

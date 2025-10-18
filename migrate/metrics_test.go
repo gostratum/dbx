@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,8 @@ type mockMetrics struct {
 	counters   map[string]float64
 	histograms map[string][]float64
 	gauges     map[string]float64
+	// protect concurrent access in tests
+	mu sync.Mutex
 }
 
 func newMockMetrics() *mockMetrics {
@@ -49,11 +52,15 @@ type mockCounter struct {
 
 func (c *mockCounter) Inc(labels ...string) {
 	key := c.name + ":" + joinLabels(labels)
+	c.metrics.mu.Lock()
+	defer c.metrics.mu.Unlock()
 	c.metrics.counters[key]++
 }
 
 func (c *mockCounter) Add(value float64, labels ...string) {
 	key := c.name + ":" + joinLabels(labels)
+	c.metrics.mu.Lock()
+	defer c.metrics.mu.Unlock()
 	c.metrics.counters[key] += value
 }
 
@@ -64,6 +71,8 @@ type mockHistogram struct {
 
 func (h *mockHistogram) Observe(value float64, labels ...string) {
 	key := h.name + ":" + joinLabels(labels)
+	h.metrics.mu.Lock()
+	defer h.metrics.mu.Unlock()
 	h.metrics.histograms[key] = append(h.metrics.histograms[key], value)
 }
 
@@ -90,26 +99,36 @@ type mockGauge struct {
 
 func (g *mockGauge) Set(value float64, labels ...string) {
 	key := g.name + ":" + joinLabels(labels)
+	g.metrics.mu.Lock()
+	defer g.metrics.mu.Unlock()
 	g.metrics.gauges[key] = value
 }
 
 func (g *mockGauge) Inc(labels ...string) {
 	key := g.name + ":" + joinLabels(labels)
+	g.metrics.mu.Lock()
+	defer g.metrics.mu.Unlock()
 	g.metrics.gauges[key]++
 }
 
 func (g *mockGauge) Dec(labels ...string) {
 	key := g.name + ":" + joinLabels(labels)
+	g.metrics.mu.Lock()
+	defer g.metrics.mu.Unlock()
 	g.metrics.gauges[key]--
 }
 
 func (g *mockGauge) Add(value float64, labels ...string) {
 	key := g.name + ":" + joinLabels(labels)
+	g.metrics.mu.Lock()
+	defer g.metrics.mu.Unlock()
 	g.metrics.gauges[key] += value
 }
 
 func (g *mockGauge) Sub(value float64, labels ...string) {
 	key := g.name + ":" + joinLabels(labels)
+	g.metrics.mu.Lock()
+	defer g.metrics.mu.Unlock()
 	g.metrics.gauges[key] -= value
 }
 

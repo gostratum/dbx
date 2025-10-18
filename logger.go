@@ -11,8 +11,7 @@ import (
 	gormlogger "gorm.io/gorm/logger"
 )
 
-// zapGormLogger is a zap-based logger for GORM
-type zapGormLogger struct {
+type gormLoggerAdapter struct {
 	logger        logx.Logger
 	logLevel      gormlogger.LogLevel
 	slowThreshold time.Duration
@@ -36,7 +35,7 @@ func NewGormLogger(logger logx.Logger, logLevel string, slowThreshold time.Durat
 	}
 
 	// approximate zap.Named by adding a component field via With
-	return &zapGormLogger{
+	return &gormLoggerAdapter{
 		logger:        logger.With(logx.String("component", "gorm")),
 		logLevel:      level,
 		slowThreshold: slowThreshold,
@@ -44,35 +43,35 @@ func NewGormLogger(logger logx.Logger, logLevel string, slowThreshold time.Durat
 }
 
 // LogMode sets the log level
-func (l *zapGormLogger) LogMode(level gormlogger.LogLevel) gormlogger.Interface {
+func (l *gormLoggerAdapter) LogMode(level gormlogger.LogLevel) gormlogger.Interface {
 	newLogger := *l
 	newLogger.logLevel = level
 	return &newLogger
 }
 
 // Info logs info level messages
-func (l *zapGormLogger) Info(ctx context.Context, msg string, data ...interface{}) {
+func (l *gormLoggerAdapter) Info(ctx context.Context, msg string, data ...any) {
 	if l.logLevel >= gormlogger.Info {
 		l.logger.Info(fmt.Sprintf(msg, data...), l.contextFields(ctx)...)
 	}
 }
 
 // Warn logs warn level messages
-func (l *zapGormLogger) Warn(ctx context.Context, msg string, data ...interface{}) {
+func (l *gormLoggerAdapter) Warn(ctx context.Context, msg string, data ...any) {
 	if l.logLevel >= gormlogger.Warn {
 		l.logger.Warn(fmt.Sprintf(msg, data...), l.contextFields(ctx)...)
 	}
 }
 
 // Error logs error level messages
-func (l *zapGormLogger) Error(ctx context.Context, msg string, data ...interface{}) {
+func (l *gormLoggerAdapter) Error(ctx context.Context, msg string, data ...any) {
 	if l.logLevel >= gormlogger.Error {
 		l.logger.Error(fmt.Sprintf(msg, data...), l.contextFields(ctx)...)
 	}
 }
 
 // Trace logs SQL traces
-func (l *zapGormLogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
+func (l *gormLoggerAdapter) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
 	if l.logLevel <= gormlogger.Silent {
 		return
 	}
@@ -100,7 +99,7 @@ func (l *zapGormLogger) Trace(ctx context.Context, begin time.Time, fc func() (s
 }
 
 // contextFields extracts logging fields from context
-func (l *zapGormLogger) contextFields(ctx context.Context) []logx.Field {
+func (l *gormLoggerAdapter) contextFields(ctx context.Context) []logx.Field {
 	var fields []logx.Field
 
 	// Extract trace ID if available
