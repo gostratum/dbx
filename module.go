@@ -247,61 +247,77 @@ func Module(opts ...Option) fx.Option {
 			},
 		),
 		// Lifecycle hooks
-		fx.Invoke(func(lc fx.Lifecycle, logger logx.Logger, loader configx.Loader, connections Connections, migrationRunner *MigrationRunner, healthChecker *HealthChecker) {
+		fx.Invoke(func(lc fx.Lifecycle, params struct {
+			fx.In
+			Logger          logx.Logger
+			Loader          configx.Loader
+			Connections     Connections
+			MigrationRunner *MigrationRunner
+			// Accept health checkers as a group; it's optional so modules that
+			// don't provide health checkers won't break the wiring.
+			HealthCheckers []*HealthChecker `group:"health_checkers" optional:"false"`
+		}) {
 			lc.Append(fx.Hook{
 				OnStart: func(ctx context.Context) error {
-					logger.Info("Starting dbx module")
+					params.Logger.Info("Starting dbx module")
 
 					// Test all connections
-					for name, db := range connections {
-						if err := testConnection(ctx, name, db, logger); err != nil {
+					for name, db := range params.Connections {
+						if err := testConnection(ctx, name, db, params.Logger); err != nil {
 							return err
 						}
 					}
 
 					// Run golang-migrate migrations if enabled
 					if cfg.useGolangMigrate {
-						if err := runGolangMigrations(ctx, logger, loader, cfg); err != nil {
+						if err := runGolangMigrations(ctx, params.Logger, params.Loader, cfg); err != nil {
 							return fmt.Errorf("golang-migrate migration failed: %w", err)
 						}
 					}
 
 					// Run GORM migrations if enabled (for backward compatibility)
 					if cfg.runMigrations {
-						if err := migrationRunner.RunMigrations(); err != nil {
+						if err := params.MigrationRunner.RunMigrations(); err != nil {
 							return fmt.Errorf("GORM migration failed: %w", err)
 						}
+						// Emit explicit success log when migrations applied without error
+						params.Logger.Info("GORM migrations applied successfully")
 					}
 
 					// Register health checks if enabled
-					if cfg.healthChecks && healthChecker != nil {
-						if err := healthChecker.RegisterHealthChecks(); err != nil {
-							logger.Error("Failed to register health checks", logx.Err(err))
-						} else {
-							logger.Info("Health checks registered", logx.Int("databases", len(connections)))
-						}
-					}
-
-					logger.Info("dbx module started successfully")
-					return nil
-				},
-				OnStop: func(ctx context.Context) error {
-					logger.Info("Stopping dbx module")
-
-					// Close all connections
-					for name, db := range connections {
-						if sqlDB, err := db.DB(); err == nil {
-							if err := sqlDB.Close(); err != nil {
-								logger.Error("Failed to close database connection",
-									logx.String("database", name),
-									logx.Err(err))
+					if cfg.healthChecks && len(params.HealthCheckers) > 0 {
+						for _, hc := range params.HealthCheckers {
+							if hc == nil {
+								continue
+							}
+							if err := hc.RegisterHealthChecks(); err != nil {
+								params.Logger.Error("Failed to register health checks", logx.Err(err))
 							} else {
-								logger.Info("Database connection closed", logx.String("database", name))
+								params.Logger.Info("Health checks registered", logx.Int("databases", len(params.Connections)))
 							}
 						}
 					}
 
-					logger.Info("dbx module stopped")
+					params.Logger.Info("dbx module started successfully")
+					return nil
+				},
+				OnStop: func(ctx context.Context) error {
+					params.Logger.Info("Stopping dbx module")
+
+					// Close all connections
+					for name, db := range params.Connections {
+						if sqlDB, err := db.DB(); err == nil {
+							if err := sqlDB.Close(); err != nil {
+								params.Logger.Error("Failed to close database connection",
+									logx.String("database", name),
+									logx.Err(err))
+							} else {
+								params.Logger.Info("Database connection closed", logx.String("database", name))
+							}
+						}
+					}
+
+					params.Logger.Info("dbx module stopped")
 					return nil
 				},
 			})
@@ -313,16 +329,19 @@ func Module(opts ...Option) fx.Option {
 func newConnections(loader configx.Loader, logger logx.Logger, cfg *moduleConfig) (Connections, error) {
 	// Load configuration using core configx pattern
 	dbConfig := DefaultConfig()
-	// Bind DB env variables to viper keys for databases so that env-provided
-	// DSNs are available during Bind. Keep this DB-specific behavior here
-	// to avoid leaking database concerns into configx.
+
+	// Bind environment variables for database DSNs.
+	// This ensures STRATUM_DB_DATABASES_<NAME>_DSN env vars are loaded.
+	// For known databases in the default config, bind them explicitly.
+	// This happens BEFORE Bind() so that UnmarshalKey respects the bindings.
 	for name := range dbConfig.Databases {
 		key := fmt.Sprintf("db.databases.%s.dsn", name)
 		env := fmt.Sprintf("DB_DATABASES_%s_DSN", strings.ToUpper(strings.ReplaceAll(name, "-", "_")))
-		envStratum := fmt.Sprintf("STRATUM_%s", strings.ToUpper(strings.ReplaceAll(name, "-", "_")))
+		envStratum := fmt.Sprintf("STRATUM_%s", env)
 		_ = loader.BindEnv(key, env, envStratum)
 	}
 
+	// Bind() will now use AutomaticEnv to pick up STRATUM_DB_* env vars
 	if err := loader.Bind(dbConfig); err != nil {
 		return nil, fmt.Errorf("failed to load database configuration: %w", err)
 	}
@@ -457,26 +476,9 @@ func runGolangMigrations(ctx context.Context, logger logx.Logger, loader configx
 		logx.Duration("lock_timeout", defaultDB.MigrationLockTimeout),
 	)
 
-	// Build migration options based on source type
-	var opts []migrate.Option
-
-	if migrationSource == "embed://" {
-		opts = append(opts, migrate.WithEmbed())
-	} else if len(migrationSource) > 7 && migrationSource[:7] == "file://" {
-		dir := migrationSource[7:] // Remove "file://" prefix
-		opts = append(opts, migrate.WithDir(dir))
-	} else {
+	// Validate migration source format (migrate.UpFromDatabaseConfig will build options)
+	if migrationSource == "" || (migrationSource != "embed://" && !(len(migrationSource) > 7 && migrationSource[:7] == "file://")) {
 		return fmt.Errorf("invalid migration_source format: %s (use 'embed://' or 'file://path')", migrationSource)
-	}
-
-	// Add other migration options
-	opts = append(opts,
-		migrate.WithTable(defaultDB.MigrationTable),
-		migrate.WithLockTimeout(defaultDB.MigrationLockTimeout),
-	)
-
-	if defaultDB.MigrationVerbose {
-		opts = append(opts, migrate.WithVerbose())
 	}
 
 	// Run migrations using the integrated database config
