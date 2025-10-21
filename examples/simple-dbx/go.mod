@@ -3,8 +3,8 @@ module example-simple-dbx
 go 1.25.1
 
 require (
-	github.com/gostratum/core v0.1.5
-	github.com/gostratum/dbx v0.1.2
+	github.com/gostratum/core v0.1.7
+	github.com/gostratum/dbx v0.1.3
 	go.uber.org/fx v1.24.0
 	gorm.io/gorm v1.25.12
 )
@@ -20,7 +20,7 @@ require (
 	github.com/go-playground/validator/v10 v10.28.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/golang-migrate/migrate/v4 v4.19.0 // indirect
-	github.com/gostratum/metricsx v0.1.2 // indirect
+	github.com/gostratum/metricsx v0.1.3 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

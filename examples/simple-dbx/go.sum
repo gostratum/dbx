@@ -53,10 +53,10 @@ github.com/golang-migrate/migrate/v4 v4.19.0 h1:RcjOnCGz3Or6HQYEJ/EEVLfWnmw9Knoi
 github.com/golang-migrate/migrate/v4 v4.19.0/go.mod h1:9dyEcu+hO+G9hPSw8AIg50yg622pXJsoHItQnDGZkI0=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
 github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
-github.com/gostratum/core v0.1.5 h1:pxx2hGV9VfVD6IU8/gtdGmRPALG5tDGn9HsD7iboaXo=
-github.com/gostratum/core v0.1.5/go.mod h1:MFwIS101d8PIahT8JWtHZGkm/WoxgQehkBiLQ0b6WE8=
-github.com/gostratum/metricsx v0.1.2 h1:Ucbix4w6WbNmgeVfQPya71llk+yCwQxGcvY0qzYOoMo=
-github.com/gostratum/metricsx v0.1.2/go.mod h1:HTnv2QKSFR5ApYlriU7gF2sYHuINNyCFXzKlSYiub0k=
+github.com/gostratum/core v0.1.7 h1:kJZDy3pZQUWvVZEctvKkukL3RTatypljU968tkZQLrc=
+github.com/gostratum/core v0.1.7/go.mod h1:eJ+GblPqoH5Qwx10+FLvVnyKee5xw5XhZIXMK8yy3Ys=
+github.com/gostratum/metricsx v0.1.3 h1:b2c351ee+d4BO5Wq5g6zn2aEqFZ+8thwDormvHGhEiU=
+github.com/gostratum/metricsx v0.1.3/go.mod h1:gEBe0azXmaM/I2YtN6J5dAtpWOr6ceVsy1VlZl7JNUE=
 github.com/hashicorp/errwrap v1.0.0/go.mod h1:YH+1FKiLXxHSkmPseP+kNlulaMuP3n2brvKWEqk/Jc4=
 github.com/hashicorp/errwrap v1.1.0 h1:OxrOeh75EUXMY8TBjag2fzXGZ40LB6IKw45YeGUDY2I=
 github.com/hashicorp/errwrap v1.1.0/go.mod h1:YH+1FKiLXxHSkmPseP+kNlulaMuP3n2brvKWEqk/Jc4=
