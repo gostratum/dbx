@@ -1,6 +1,7 @@
 package dbx
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +10,44 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestConfigSanitizeAndSummary(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Default = "primary"
+	cfg.Databases["primary"].User = "alice"
+	cfg.Databases["primary"].Password = "s3cr3t"
+	cfg.Databases["primary"].DSN = "postgres://alice:s3cr3t@localhost:5432/db"
+
+	s := cfg.Sanitize()
+	if s == cfg {
+		t.Fatalf("Sanitize must return a copy, not the same pointer")
+	}
+
+	// Secrets must be redacted
+	db := s.Databases["primary"]
+	if strings.Contains(db.DSN, "s3cr3t") || strings.Contains(db.Password, "s3cr3t") {
+		t.Fatalf("Sanitize did not redact secrets")
+	}
+
+	summary := cfg.ConfigSummary()
+	if summary["default"] != "primary" {
+		t.Fatalf("unexpected summary default: %#v", summary["default"])
+	}
+
+	dbs, ok := summary["databases"].(map[string]map[string]any)
+	if !ok {
+		t.Fatalf("summary databases shape unexpected: %#v", summary["databases"])
+	}
+
+	primary, ok := dbs["primary"]
+	if !ok {
+		t.Fatalf("primary database missing in summary")
+	}
+
+	if primary["has_password"] != true {
+		t.Fatalf("expected has_password true, got %#v", primary["has_password"])
+	}
+}
 
 // newConfigLoader is a helper to create a config loader for tests
 func newConfigLoader(configYAML string) (configx.Loader, error) {

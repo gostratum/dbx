@@ -256,3 +256,55 @@ func (c *Config) GetDefaultDatabase() (*DatabaseConfig, error) {
 
 	return dbConfig, nil
 }
+
+// Sanitize returns a copy of the Config with secret fields redacted.
+// It is safe to call before logging or including config in diagnostic output.
+func (c *Config) Sanitize() *Config {
+	out := &Config{
+		Default:   c.Default,
+		Databases: make(map[string]*DatabaseConfig, len(c.Databases)),
+	}
+
+	for k, db := range c.Databases {
+		if db == nil {
+			out.Databases[k] = nil
+			continue
+		}
+		copyDB := *db
+		if copyDB.DSN != "" {
+			copyDB.DSN = "[redacted]"
+		}
+		if copyDB.Password != "" {
+			copyDB.Password = "[redacted]"
+		}
+		// leave other non-secret fields intact
+		out.Databases[k] = &copyDB
+	}
+
+	return out
+}
+
+// ConfigSummary returns a compact diagnostic map suitable for logging.
+// It intentionally avoids including secret material.
+func (c *Config) ConfigSummary() map[string]any {
+	dbs := make(map[string]map[string]any)
+	for name, db := range c.Databases {
+		if db == nil {
+			dbs[name] = map[string]any{"present": false}
+			continue
+		}
+		dbs[name] = map[string]any{
+			"driver":       db.Driver,
+			"host":         db.Host,
+			"port":         db.Port,
+			"dbname":       db.DBName,
+			"has_dsn":      db.DSN != "",
+			"has_password": db.Password != "",
+		}
+	}
+
+	return map[string]any{
+		"default":   c.Default,
+		"databases": dbs,
+	}
+}
