@@ -100,6 +100,31 @@ func DefaultConfig() *Config {
 	}
 }
 
+// Sanitize returns a shallow copy of the config with any sensitive values redacted.
+// Migrations config doesn't typically have secrets, but we provide the method
+// for consistency with other modules.
+func (c *Config) Sanitize() *Config {
+	if c == nil {
+		return DefaultConfig()
+	}
+	copy := *c
+	// no secrets expected here; ensure Dir isn't accidentally leaked in summaries
+	return &copy
+}
+
+// ConfigSummary returns a small diagnostics map safe for logging.
+func (c *Config) ConfigSummary() map[string]any {
+	if c == nil {
+		return map[string]any{}
+	}
+	return map[string]any{
+		"auto_migrate": c.AutoMigrate,
+		"use_embed":    c.UseEmbed,
+		"has_dir":      c.Dir != "",
+		"table":        c.Table,
+	}
+}
+
 // NewConfig creates a new migration config from Viper using unified databases configuration
 // Reads from databases.primary.* configuration keys and DB_DATABASES_PRIMARY_* environment variables
 func NewConfig(v *viper.Viper) (*Config, error) {
@@ -140,6 +165,9 @@ func NewConfig(v *viper.Viper) (*Config, error) {
 	}
 
 	// Validate configuration
+	// Sanitize before validation and returning
+	cfg = cfg.Sanitize()
+
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
