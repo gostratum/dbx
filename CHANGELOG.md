@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [0.1.5] - 2025-10-25
+
+### Added
+- Release version 0.1.5
+- Read replica support for database connections
+    - New example: `examples/read-replicas/main.go`
+    - Added `read_replica.go` and `read_replica_test.go`
+    - Updated `module.go` and `config.go` for replica config
+    - Helper functions: `WithReadReplicas`, `WithPrimary`
+- AI coding agent instructions for DBX repository
+    - Added `.github/copilot-instructions.md` for agent usage and best practices
+
+### Changed
+- Updated gostratum dependencies to latest versions
+
+
 ### Changed
 - **BREAKING**: Configuration now uses `core/configx.Loader` instead of direct `viper.Viper` dependency
 - **BREAKING**: Removed `LoadConfig(v *viper.Viper) (*Config, error)` function
