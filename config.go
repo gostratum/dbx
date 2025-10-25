@@ -16,6 +16,10 @@ type DatabaseConfig struct {
 	// Database Connection Settings
 	Driver string `mapstructure:"driver" yaml:"driver" default:"postgres"`
 	DSN    string `mapstructure:"dsn" yaml:"dsn"`
+
+	// Read Replicas - for read/write splitting
+	ReadReplicas []string `mapstructure:"read_replicas" yaml:"read_replicas"`
+
 	// Connection components (optional) - if DSN is not provided these are used to build one
 	Host            string            `mapstructure:"host" yaml:"host"`
 	Port            int               `mapstructure:"port" yaml:"port"`

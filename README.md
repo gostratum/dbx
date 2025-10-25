@@ -6,6 +6,7 @@ A thin, composable SQL layer built on top of [**gostratum/core**](https://github
 
 - **Fx-first composition** - No globals, pure dependency injection
 - **Multi-database support** - Manage multiple database connections
+- **Read replica support** - Automatic read/write splitting for scalability
 - **Config-driven setup** - Uses `core/configx` for configuration with sensible defaults
 - **Auto-migration support** - GORM model auto-migration and SQL file migrations
 - **Health integration** - Automatic readiness/liveness checks via `core.Registry`
@@ -166,6 +167,47 @@ app := core.New(
     }),
 )
 ```
+
+### Read Replicas (NEW ✨)
+
+Configure read replicas for automatic read/write splitting:
+
+```yaml
+db:
+  default: primary
+  databases:
+    primary:
+      driver: postgres
+      dsn: postgres://user:pass@primary:5432/db?sslmode=disable
+      
+      # Read replicas for load balancing
+      read_replicas:
+        - postgres://user:pass@replica1:5432/db?sslmode=disable
+        - postgres://user:pass@replica2:5432/db?sslmode=disable
+      
+      max_open_conns: 25
+```
+
+**Usage:**
+
+```go
+// Writes automatically go to primary
+db.Create(&user)           // → Primary
+db.Update(&user)           // → Primary
+db.Delete(&user)           // → Primary
+
+// Reads can use replicas (automatic load balancing)
+db.Find(&users)            // → Replica (round-robin)
+db.First(&user, 1)         // → Replica
+
+// Force primary database (for strong consistency after writes)
+dbx.WithPrimary(db).First(&user, id)  // → Primary
+
+// Explicitly use replicas
+dbx.WithReadReplicas(db).Find(&users) // → Replica
+```
+
+**See:** [Read Replicas Example](examples/read-replicas/README.md) for complete setup with Docker Compose.
 
 ### Configuration Options
 

@@ -408,6 +408,13 @@ func createConnection(name string, dbCfg *DatabaseConfig, logger logx.Logger, cf
 	sqlDB.SetConnMaxLifetime(dbCfg.ConnMaxLifetime)
 	sqlDB.SetConnMaxIdleTime(dbCfg.ConnMaxIdleTime)
 
+	// Configure read replicas if specified
+	if len(dbCfg.ReadReplicas) > 0 {
+		if err := configureReadReplicas(db, dbCfg.ReadReplicas, logger); err != nil {
+			return nil, fmt.Errorf("failed to configure read replicas: %w", err)
+		}
+	}
+
 	logger.Info("Database connection created successfully", logx.String("database", name))
 	return db, nil
 }

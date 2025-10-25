@@ -1,0 +1,27 @@
+db:
+  default: primary
+  databases:
+    primary:
+      driver: postgres
+      dsn: postgres://postgres:postgres@localhost:5432/demo?sslmode=disable
+      
+      # Read Replicas Configuration
+      # These DSNs point to read replica databases
+      # Reads will be load-balanced across these replicas
+      read_replicas:
+        - postgres://postgres:postgres@localhost:5433/demo?sslmode=disable  # Replica 1
+        - postgres://postgres:postgres@localhost:5434/demo?sslmode=disable  # Replica 2
+      
+      # Connection Pool Settings
+      max_open_conns: 25
+      max_idle_conns: 5
+      conn_max_lifetime: 5m
+      conn_max_idle_time: 5m
+      
+      # Logging
+      log_level: info
+      slow_threshold: 200ms
+      
+      # Performance
+      skip_default_tx: false
+      prepare_stmt: true
